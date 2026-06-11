@@ -27,7 +27,6 @@ interface IPermissionlessWithdrawals {
     error InvalidAdminAddress();
     error InvalidATokenAddress();
     error InvalidATokenUnderlying();
-    error InvalidIntentAmountBounds(uint256 minIntentAssets, uint256 maxIntentAssets);
     error InvalidMainnetControllerAddress();
     error InvalidPenaltyRecipientAddress();
     error InvalidRecipientAddress();
@@ -41,10 +40,10 @@ interface IPermissionlessWithdrawals {
     event PermissionlessWithdraw(
         address indexed sender,
         address indexed vault,
+        uint256         assetsWithdrawn,
         address         recipient,
         uint256         penaltyShares,
-        uint256         sharesRedeemed,
-        uint256         assetsWithdrawn
+        uint256         sharesToRecipient
     );
 
     /**

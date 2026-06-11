@@ -41,7 +41,7 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     /*** Declarations and constructor                                                           ***/
     /**********************************************************************************************/
 
-    uint256 public constant MAX_PENALTY_BPS = 200; // 2% penalty
+    uint256 public constant PENALTY_BPS = 200; // 2% penalty
 
     address public immutable penaltyRecipient;
 
@@ -109,40 +109,41 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
         require(shares <= allowance, InsufficientAllowance(shares, allowance));
 
-        // Step 3: Pay the penalty
+        // Step 3: Withdraw underlying from Aave
 
-        uint256 penaltyShares = (shares * MAX_PENALTY_BPS) / 1e4;
+        uint256 assetsRequested = IERC4626Like(vault).convertToAssets(shares);
+        uint256 assetsWithdrawn = mainnetController.withdrawAave(vaultConfig_.aToken, assetsRequested);
+
+        require(
+            assetsWithdrawn >= assetsRequested,
+            InsufficientATokenLiquidity(assetsRequested, assetsWithdrawn)
+        );
+
+        // Step 4: Transfer assets to the vault
+
+        mainnetController.transferAsset(IERC4626Like(vault).asset(), vault, assetsWithdrawn);
+
+        // Step 5: Pay the penalty
+
+        uint256 penaltyShares = (shares * PENALTY_BPS) / 1e4;
 
         if (penaltyShares > 0) {
             IERC4626Like(vault).redeem(penaltyShares, penaltyRecipient, msg.sender);
         }
 
-        // Step 4: Withdraw underlying from Aave
+        // Step 6: Redeem shares from the vault to the recipient
 
-        uint256 sharesToRedeem  = shares - penaltyShares;
-        uint256 assetsToFund    = IERC4626Like(vault).convertToAssets(sharesToRedeem);
-        uint256 assetsWithdrawn = mainnetController.withdrawAave(vaultConfig_.aToken, assetsToFund);
+        uint256 sharesToRecipient = shares - penaltyShares;
 
-        require(
-            assetsWithdrawn >= assetsToFund,
-            InsufficientATokenLiquidity(assetsToFund, assetsWithdrawn)
-        );
-
-        // Step 5: Transfer assets to the vault and redeem shares from the vault
-
-        address underlying = IERC4626Like(vault).asset();
-
-        mainnetController.transferAsset(underlying, vault, assetsWithdrawn);
-
-        IERC4626Like(vault).redeem(sharesToRedeem, recipient, msg.sender);
+        IERC4626Like(vault).redeem(sharesToRecipient, recipient, msg.sender);
 
         emit PermissionlessWithdraw(
             msg.sender,
             vault,
+            assetsWithdrawn,
             recipient,
             penaltyShares,
-            sharesToRedeem,
-            assetsWithdrawn
+            sharesToRecipient
         );
     }
 
