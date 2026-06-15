@@ -46,7 +46,6 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
 
         assertEq(address(newWithdrawals.mainnetController()), address(controller));
         assertEq(newWithdrawals.penaltyRecipient(),           penaltyRecipient);
-        assertEq(newWithdrawals.PENALTY_BPS(),                200);
     }
 
     /**********************************************************************************************/
@@ -62,19 +61,19 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             DEFAULT_ADMIN_ROLE
         ));
         vm.prank(unauthorized);
-        withdrawals.updateVaultConfig(address(vault), address(aToken), true);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), PENALTY_SHARES, true);
     }
 
     function test_updateVaultConfig_invalidVaultAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.InvalidVaultAddress.selector);
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(0), address(0), true);
+        withdrawals.updateVaultConfig(address(0), address(0), 0, true);
     }
 
     function test_updateVaultConfig_invalidATokenAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.InvalidATokenAddress.selector);
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(vault), address(0), true);
+        withdrawals.updateVaultConfig(address(vault), address(0), 0, true);
     }
 
     function test_updateVaultConfig_invalidATokenUnderlying() external {
@@ -83,47 +82,53 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
 
         vm.expectRevert(IPermissionlessWithdrawals.InvalidATokenUnderlying.selector);
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(vault), address(wrongAToken), true);
+        withdrawals.updateVaultConfig(address(vault), address(wrongAToken), 0, true);
     }
 
     function test_updateVaultConfig() external {
         MockERC4626 newVault  = new MockERC4626(address(asset));
         MockAToken  newAToken = new MockAToken(address(asset));
 
-        ( bool whitelisted, address aToken_ ) = withdrawals.vaultConfig(address(newVault));
+        ( bool whitelisted, address aToken_, uint256 penaltyShares )
+            = withdrawals.vaultConfig(address(newVault));
 
-        assertEq(whitelisted, false);
-        assertEq(aToken_,     address(0));
+        assertEq(whitelisted,   false);
+        assertEq(aToken_,       address(0));
+        assertEq(penaltyShares, 0);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VaultConfigUpdated(
             address(newVault),
             address(newAToken),
+            50e18,
             true
         );
 
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(newVault), address(newAToken), true);
+        withdrawals.updateVaultConfig(address(newVault), address(newAToken), 50e18, true);
 
-        ( whitelisted, aToken_ ) = withdrawals.vaultConfig(address(newVault));
+        ( whitelisted, aToken_, penaltyShares ) = withdrawals.vaultConfig(address(newVault));
 
-        assertEq(whitelisted, true);
-        assertEq(aToken_,     address(newAToken));
+        assertEq(whitelisted,   true);
+        assertEq(aToken_,       address(newAToken));
+        assertEq(penaltyShares, 50e18);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VaultConfigUpdated(
             address(newVault),
             address(newAToken),
+            50e18,
             false
         );
 
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(newVault), address(newAToken), false);
+        withdrawals.updateVaultConfig(address(newVault), address(newAToken), 50e18, false);
 
-        ( whitelisted, aToken_ ) = withdrawals.vaultConfig(address(newVault));
+        ( whitelisted, aToken_, penaltyShares ) = withdrawals.vaultConfig(address(newVault));
 
-        assertEq(whitelisted, false);
-        assertEq(aToken_,     address(newAToken));
+        assertEq(whitelisted,   false);
+        assertEq(aToken_,       address(newAToken));
+        assertEq(penaltyShares, 50e18);
     }
 
     /**********************************************************************************************/
@@ -140,7 +145,7 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         // A previously whitelisted vault that has been de-whitelisted also reverts.
 
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(vault), address(aToken), false);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), PENALTY_SHARES, false);
 
         vm.expectRevert(IPermissionlessWithdrawals.VaultNotWhitelisted.selector);
         vm.prank(user);
@@ -151,6 +156,24 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         vm.expectRevert(IPermissionlessWithdrawals.InvalidRecipientAddress.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(vault), address(0), USER_SHARES);
+    }
+
+    function test_permissionlessWithdraw_insufficientSharesToCoverPenaltyBoundary() external {
+        vm.expectRevert(abi.encodeWithSelector(
+            IPermissionlessWithdrawals.InsufficientSharesToCoverPenalty.selector,
+            PENALTY_SHARES,
+            PENALTY_SHARES
+        ));
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(vault), recipient, PENALTY_SHARES);
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(vault), recipient, PENALTY_SHARES + 1);
+
+        assertEq(asset.balanceOf(penaltyRecipient), PENALTY_SHARES);
+        assertEq(asset.balanceOf(recipient),        1);
+        assertEq(vault.balanceOf(user),             USER_SHARES - PENALTY_SHARES - 1);
     }
 
     function test_permissionlessWithdraw_insufficientSharesBoundary() external {
@@ -208,13 +231,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
     }
 
     function test_permissionlessWithdraw_zeroPenalty() external {
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), 0, true);
 
         assertEq(asset.balanceOf(penaltyRecipient), 0);
         assertEq(asset.balanceOf(recipient),        0);
         assertEq(vault.balanceOf(user),             USER_SHARES);
 
-        // 49 shares * 200 / 1e4 rounds down to zero penalty shares.
-        // No call to redeem penalty shares.
+        // No call to redeem penalty shares when penaltyShares is zero.
         vm.expectCall(
             address(vault),
             abi.encodeCall(MockERC4626.redeem, (0, penaltyRecipient, user)),
@@ -237,21 +261,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         assertEq(asset.balanceOf(penaltyRecipient), 0);
         assertEq(asset.balanceOf(recipient),        49);
         assertEq(vault.balanceOf(user),             USER_SHARES - 49);
-
-        // 50 shares is the smallest amount that pays a non-zero penalty.
-
-        vm.prank(user);
-        withdrawals.permissionlessWithdraw(address(vault), recipient, 50);
-
-        assertEq(asset.balanceOf(penaltyRecipient), 1);
-        assertEq(asset.balanceOf(recipient),        49 + 49);
-        assertEq(vault.balanceOf(user),             USER_SHARES - 49 - 50);
     }
 
     function test_permissionlessWithdraw() external {
-        uint256 shares            = USER_SHARES;
-        uint256 assetsRequested   = vault.convertToAssets(shares);
-        uint256 penaltyShares     = (shares * withdrawals.PENALTY_BPS()) / 1e4;
+        uint256 shares          = USER_SHARES;
+        uint256 assetsRequested = vault.convertToAssets(shares);
+
+        ( , , uint256 penaltyShares ) = withdrawals.vaultConfig(address(vault));
+
         uint256 sharesToRecipient = shares - penaltyShares;
 
         assertEq(vault.balanceOf(user),                       USER_SHARES);
@@ -292,6 +309,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
     function test_permissionlessWithdraw_exchangeRateAboveOne() external {
         vault.setExchangeRate(2e18);
 
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), 20e18, true);
+
         assertEq(vault.balanceOf(user),                       USER_SHARES);
         assertEq(vault.allowance(user, address(withdrawals)), USER_SHARES);
 
@@ -318,6 +338,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         uint256 shares          = 1000e18;
         uint256 assetsRequested = vault.convertToAssets(shares);
         uint256 assetsWithdrawn = assetsRequested + 1e18;
+
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), 20e18, true);
 
         controller.setWithdrawAaveReturn(assetsWithdrawn);
 
@@ -352,14 +375,21 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         assertEq(asset.balanceOf(address(controller)), CONTROLLER_BALANCE - assetsWithdrawn);
     }
 
-    function testFuzz_permissionlessWithdraw(uint256 shares, uint256 exchangeRate) external {
-        shares       = bound(shares,       1,    USER_SHARES);
-        exchangeRate = bound(exchangeRate, 1e15, 100e18);
+    function testFuzz_permissionlessWithdraw(
+        uint256 shares,
+        uint256 penaltyShares,
+        uint256 exchangeRate
+    ) external {
+        shares        = bound(shares,        1,    USER_SHARES);
+        penaltyShares = bound(penaltyShares, 0,    shares - 1);
+        exchangeRate  = bound(exchangeRate,  1e15, 100e18);
+
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), penaltyShares, true);
 
         vault.setExchangeRate(exchangeRate);
 
         uint256 assetsRequested   = vault.convertToAssets(shares);
-        uint256 penaltyShares     = (shares * withdrawals.PENALTY_BPS()) / 1e4;
         uint256 sharesToRecipient = shares - penaltyShares;
 
         uint256 penaltyAssets   = vault.convertToAssets(penaltyShares);

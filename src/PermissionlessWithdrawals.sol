@@ -41,11 +41,9 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     /*** Declarations and constructor                                                           ***/
     /**********************************************************************************************/
 
-    uint256 public constant PENALTY_BPS = 200; // 2% penalty
+    IMainnetControllerLike public immutable mainnetController;
 
     address public immutable penaltyRecipient;
-
-    IMainnetControllerLike public immutable mainnetController;
 
     mapping(address vault => VaultConfig config) public vaultConfig;
 
@@ -67,6 +65,7 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     function updateVaultConfig(
         address vault,
         address aToken,
+        uint256 penaltyShares,
         bool    whitelisted
     )
         external onlyRole(DEFAULT_ADMIN_ROLE)
@@ -80,11 +79,12 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         );
 
         vaultConfig[vault] = VaultConfig({
-            whitelisted : whitelisted,
-            aToken      : aToken
+            aToken        : aToken,
+            penaltyShares : penaltyShares,
+            whitelisted   : whitelisted
         });
 
-        emit VaultConfigUpdated(vault, aToken, whitelisted);
+        emit VaultConfigUpdated(vault, aToken, penaltyShares, whitelisted);
     }
 
     /**********************************************************************************************/
@@ -100,6 +100,11 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         require(recipient != address(0),  InvalidRecipientAddress());
 
         // Step 2: Validate the user has sufficient shares and allowance
+
+        require(
+            shares > vaultConfig_.penaltyShares,
+            InsufficientSharesToCoverPenalty(shares, vaultConfig_.penaltyShares)
+        );
 
         uint256 userShares = IERC4626Like(vault).balanceOf(msg.sender);
 
@@ -125,15 +130,13 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
         // Step 5: Pay the penalty
 
-        uint256 penaltyShares = (shares * PENALTY_BPS) / 1e4;
-
-        if (penaltyShares > 0) {
-            IERC4626Like(vault).redeem(penaltyShares, penaltyRecipient, msg.sender);
+        if (vaultConfig_.penaltyShares > 0) {
+            IERC4626Like(vault).redeem(vaultConfig_.penaltyShares, penaltyRecipient, msg.sender);
         }
 
         // Step 6: Redeem shares from the vault to the recipient
 
-        uint256 sharesToRecipient = shares - penaltyShares;
+        uint256 sharesToRecipient = shares - vaultConfig_.penaltyShares;
 
         IERC4626Like(vault).redeem(sharesToRecipient, recipient, msg.sender);
 
@@ -142,7 +145,7 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
             vault,
             assetsWithdrawn,
             recipient,
-            penaltyShares,
+            vaultConfig_.penaltyShares,
             sharesToRecipient
         );
     }

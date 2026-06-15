@@ -14,6 +14,7 @@ contract UnitTestBase is Test {
 
     uint256 internal constant USER_SHARES        = 1_000_000e18;
     uint256 internal constant CONTROLLER_BALANCE = 1e30;
+    uint256 internal constant PENALTY_SHARES     = 20_000e18;
     bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
 
     address internal admin            = makeAddr("admin");
@@ -37,7 +38,7 @@ contract UnitTestBase is Test {
         withdrawals = new PermissionlessWithdrawals(admin, address(controller), penaltyRecipient);
 
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(vault), address(aToken), true);
+        withdrawals.updateVaultConfig(address(vault), address(aToken), PENALTY_SHARES, true);
 
         vault.mint(user, USER_SHARES);
 
