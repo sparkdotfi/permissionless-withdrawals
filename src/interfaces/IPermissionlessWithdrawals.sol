@@ -7,29 +7,32 @@ interface IPermissionlessWithdrawals {
     /*** Types                                                                                  ***/
     /**********************************************************************************************/
 
+    enum VenueType { AAVE, ERC4626, PSM }
+
     /**
      *  @dev   Configuration for a specific vault.
      *  @param whitelisted   Whether the vault is allowed to be used with this contract.
-     *  @param aToken        Address of the Aave aToken corresponding to the vault.
-     *  @param penaltyShares The number of shares to be sent to the penalty recipient.
+     *  @param venueType     The type of venue used for the withdrawals.
+     *  @param venue         Address of the venue used for the withdrawals.
+     *                       For Aave, this is the address of the aToken.
+     *                       For ERC4626, this is the address of the vault.
+     *                       For PSM, this is the address of the PSM.
+     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      */
     struct VaultConfig {
-        bool    whitelisted;
-        address aToken;
-        uint256 penaltyShares;
+        bool      whitelisted;
+        VenueType venueType;
+        address   venue;
+        uint256   penaltyAmount;
     }
 
     /**********************************************************************************************/
     /*** Errors                                                                                 ***/
     /**********************************************************************************************/
 
-    error InsufficientAllowance(uint256 requiredAllowance, uint256 currentAllowance);
-    error InsufficientATokenLiquidity(uint256 required, uint256 available);
-    error InsufficientShares(uint256 sharesRequested, uint256 sharesPresent);
-    error InsufficientSharesToCoverPenalty(uint256 sharesRequested, uint256 penaltyShares);
+    error InsufficientVenueLiquidity(uint256 required, uint256 available);
     error InvalidAdminAddress();
-    error InvalidATokenAddress();
-    error InvalidATokenUnderlying();
+    error InvalidVenueAddress();
     error InvalidMainnetControllerAddress();
     error InvalidPenaltyRecipientAddress();
     error InvalidRecipientAddress();
@@ -41,25 +44,26 @@ interface IPermissionlessWithdrawals {
     /**********************************************************************************************/
 
     event PermissionlessWithdraw(
-        address indexed sender,
         address indexed vault,
-        uint256         assetsWithdrawn,
+        address indexed sender,
         address         recipient,
-        uint256         penaltyShares,
-        uint256         sharesToRecipient
+        uint256         penaltyAmount,
+        uint256         recipientAmount
     );
 
     /**
      *  @dev   Emitted when the admin updates a vault's configuration.
      *  @param vault         Address of the vault being configured.
-     *  @param aToken        Address of the Aave aToken corresponding to the vault.
-     *  @param penaltyShares The number of shares to be sent to the penalty recipient.
+     *  @param venue         Address of the venue being configured.
+     *  @param venueType     The type of venue being configured.
+     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      *  @param whitelisted   Whether the vault is now whitelisted.
      */
     event VaultConfigUpdated(
         address indexed vault,
-        address indexed aToken,
-        uint256         penaltyShares,
+        address indexed venue,
+        VenueType       venueType,
+        uint256         penaltyAmount,
         bool            whitelisted
     );
 
@@ -71,15 +75,17 @@ interface IPermissionlessWithdrawals {
      *  @dev   Updates the configuration for a given vault.
      *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
      *  @param vault         Address of the vault to configure.
-     *  @param aToken        Address of the Aave aToken corresponding to the vault.
-     *  @param penaltyShares The number of shares to be sent to the penalty recipient.
+     *  @param venue         Address of the venue to configure.
+     *  @param venueType     The type of venue to configure.
+     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      *  @param whitelisted   Whether the vault should be whitelisted.
      */
     function updateVaultConfig(
-        address vault,
-        address aToken,
-        uint256 penaltyShares,
-        bool    whitelisted
+        address   vault,
+        address   venue,
+        VenueType venueType,
+        uint256   penaltyAmount,
+        bool      whitelisted
     ) external;
 
     /**********************************************************************************************/
