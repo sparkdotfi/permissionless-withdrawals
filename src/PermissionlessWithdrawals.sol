@@ -7,12 +7,6 @@ import { SafeERC20 }               from "../lib/openzeppelin-contracts/contracts
 
 import { IPermissionlessWithdrawals } from "./interfaces/IPermissionlessWithdrawals.sol";
 
-interface IATokenLike {
-
-    function UNDERLYING_ASSET_ADDRESS() external view returns (address);
-
-}
-
 interface IERC4626Like {
 
     function allowance(address owner, address spender) external view returns (uint256);
@@ -55,16 +49,19 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     /*** Declarations and constructor                                                           ***/
     /**********************************************************************************************/
 
+    uint256 public constant USDS_CONVERSION_PRECISION = 1e12;
+
     IMainnetControllerLike public immutable mainnetController;
 
     address public immutable penaltyRecipient;
 
     mapping(address vault => VaultConfig config) public vaultConfig;
+    mapping(address venue => VenueConfig config) public venueConfig;
 
     constructor(address admin, address mainnetController_, address penaltyRecipient_) {
-        require(admin              != address(0), InvalidAdminAddress());
-        require(mainnetController_ != address(0), InvalidMainnetControllerAddress());
-        require(penaltyRecipient_  != address(0), InvalidPenaltyRecipientAddress());
+        require(admin              != address(0), ZeroAdminAddress());
+        require(mainnetController_ != address(0), ZeroMainnetControllerAddress());
+        require(penaltyRecipient_  != address(0), ZeroPenaltyRecipientAddress());
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 
@@ -78,108 +75,144 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
     function updateVaultConfig(
         address   vault,
-        address   venue,
-        VenueType venueType,
-        uint256   penaltyAmount,
-        bool      whitelisted
+        bool      whitelisted,
+        uint256   penaltyAmount
     )
-        external onlyRole(DEFAULT_ADMIN_ROLE)
+        external override onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(vault  != address(0), InvalidVaultAddress());
-        require(venue  != address(0), InvalidVenueAddress());
-
-        // TODO: Validate the venue type is compatible with the vault
+        require(vault != address(0), ZeroVaultAddress());
+        require(penaltyAmount > 0,   ZeroPenaltyAmount());
 
         vaultConfig[vault] = VaultConfig({
-            venue         : venue,
-            venueType     : venueType,
-            penaltyAmount : penaltyAmount,
-            whitelisted   : whitelisted
+            whitelisted   : whitelisted,
+            penaltyAmount : penaltyAmount
         });
 
-        emit VaultConfigUpdated(vault, venue, venueType, penaltyAmount, whitelisted);
+        emit VaultConfigUpdated(vault, whitelisted, penaltyAmount);
+    }
+
+    function updateVenueConfig(
+        address   venue,
+        VenueType venueType,
+        bool      whitelisted
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(venue != address(0), ZeroVenueAddress());
+
+        venueConfig[venue] = VenueConfig({
+            whitelisted : whitelisted,
+            venueType   : venueType
+        });
+
+        emit VenueConfigUpdated(venue, whitelisted, venueType);
     }
 
     /**********************************************************************************************/
     /*** External functions                                                                     ***/
     /**********************************************************************************************/
 
-    function permissionlessWithdraw(address vault, address recipient, uint256 shares) external {
+    function permissionlessWithdraw(
+        address vault,
+        address venue,
+        address recipient,
+        uint256 shares
+    ) external override {
         // Step 1: Validate the vault and recipient
 
-        VaultConfig memory config = vaultConfig[vault];
+        VaultConfig memory vaultConfig_ = vaultConfig[vault];
 
-        require(config.whitelisted, VaultNotWhitelisted());
-        require(recipient != address(0),  InvalidRecipientAddress());
+        require(vaultConfig_.whitelisted,       VaultNotWhitelisted());
+        require(venueConfig[venue].whitelisted, VenueNotWhitelisted());
+        require(recipient != address(0),        ZeroRecipientAddress());
 
         // Step 2: Withdraw the assets from the venue
 
         address asset           = IERC4626Like(vault).asset();
         uint256 assetsRequested = IERC4626Like(vault).convertToAssets(shares);
+        uint256 assetsToTransfer = _validateAndWithdrawFromVenue(vault, venue, asset, assetsRequested);
 
-        _validateAndWithdrawFromVenue(vault, asset, assetsRequested);
+        // Step 3: Transfer withdrawn assets to the vault
 
-        // Step 3: Transfer assets to the vault
-
-        mainnetController.transferAsset(asset, vault, assetsRequested);
+        if (assetsToTransfer > 0) {
+            mainnetController.transferAsset(asset, vault, assetsToTransfer);
+        }
 
         // Step 4: Redeem full shares amount
         uint256 fullAmount = IERC4626Like(vault).redeem(shares, address(this), msg.sender);
 
         // Step 5: Pay penalty amount and transfer remaining assets to the recipient
 
-        uint256 recipientAmount = fullAmount - config.penaltyAmount;
+        require(fullAmount >= vaultConfig_.penaltyAmount, InsufficientAssetsToCoverPenalty());
 
-        IERC20(asset).safeTransfer(penaltyRecipient, config.penaltyAmount);
+        uint256 recipientAmount = fullAmount - vaultConfig_.penaltyAmount;
+
+        IERC20(asset).safeTransfer(penaltyRecipient, vaultConfig_.penaltyAmount);
         IERC20(asset).safeTransfer(recipient,        recipientAmount);
 
         emit PermissionlessWithdraw(
             vault,
             msg.sender,
             recipient,
-            config.penaltyAmount,
+            vaultConfig_.penaltyAmount,
             recipientAmount
         );
     }
 
+    /**********************************************************************************************/
+    /*** Internal helper functions                                                              ***/
+    /**********************************************************************************************/
+
     function _validateAndWithdrawFromVenue(
         address vault,
+        address venue,
         address asset,
         uint256 assetsRequested
-    ) internal {
-        VaultConfig memory config = vaultConfig[vault];
+    ) internal returns (uint256 assetsToTransfer) {
+        address proxy                = mainnetController.proxy();
+        uint256 proxyStartingBalance = IERC20(asset).balanceOf(proxy);
+        uint256 vaultStartingBalance = IERC20(asset).balanceOf(vault);
 
-        address proxy = mainnetController.proxy();
+        // Amount to move into the vault.
+        assetsToTransfer = assetsRequested - _min(assetsRequested, vaultStartingBalance);
 
-        uint256 startingBalance = IERC20(asset).balanceOf(proxy);
+        // Amount proxy must pull from the venue.
+        uint256 assetsToWithdraw = assetsToTransfer - _min(assetsToTransfer, proxyStartingBalance);
 
-        // Proxy already holds enough idle liquidity, nothing to withdraw from the venue.
-        if (startingBalance >= assetsRequested) return;
+        // Proxy already holds enough assets to transfer, skip the venue withdrawal.
+        if (assetsToWithdraw == 0) return assetsToTransfer;
 
-        uint256 shortfall = assetsRequested - startingBalance;
+        VenueConfig memory venueConfig_ = venueConfig[venue];
 
-        if (config.venueType == VenueType.AAVE) {
+        if (venueConfig_.venueType == VenueType.AAVE) {
             mainnetController.withdrawAave({
-                aToken : config.venue,
-                amount : shortfall
+                aToken : venue,
+                amount : assetsToWithdraw
             });
-        } else if (config.venueType == VenueType.ERC4626) {
+        }
+        else if (venueConfig_.venueType == VenueType.ERC4626) {
             mainnetController.withdrawERC4626({
-                token       : config.venue,
-                amount      : shortfall,
+                token       : venue,
+                amount      : assetsToWithdraw,
                 maxSharesIn : type(uint256).max // Relying on controller for slippage protection
             });
-        } else if (config.venueType == VenueType.PSM) {
-            mainnetController.mintUSDS(shortfall * 1e12); // @TODO : hard code is fine?
-            mainnetController.swapUSDSToUSDC(shortfall);
+        }
+        else if (venueConfig_.venueType == VenueType.PSM) {
+            mainnetController.mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
+            mainnetController.swapUSDSToUSDC(assetsToWithdraw);
+        }
+        else {
+            revert InvalidVenueType();
         }
 
-        uint256 endingBalance = IERC20(asset).balanceOf(proxy);
+        uint256 proxyEndingBalance = IERC20(asset).balanceOf(proxy);
 
         require(
-            endingBalance >= assetsRequested,
-            InsufficientVenueLiquidity(assetsRequested, endingBalance)
+            proxyEndingBalance >= assetsToTransfer,
+            InsufficientVenueLiquidity(assetsToTransfer, proxyEndingBalance)
         );
+    }
+
+    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
     }
 
 }

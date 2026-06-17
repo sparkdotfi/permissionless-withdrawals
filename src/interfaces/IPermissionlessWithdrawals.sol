@@ -10,34 +10,41 @@ interface IPermissionlessWithdrawals {
     enum VenueType { AAVE, ERC4626, PSM }
 
     /**
+     *  @dev   Configuration for a specific venue.
+     *  @param whitelisted Whether the venue is allowed to be used for permissionless withdrawals.
+     *  @param venueType   The type of venue used for the withdrawals.
+     */
+    struct VenueConfig {
+        bool      whitelisted;
+        VenueType venueType;
+    }
+
+    /**
      *  @dev   Configuration for a specific vault.
-     *  @param whitelisted   Whether the vault is allowed to be used with this contract.
-     *  @param venueType     The type of venue used for the withdrawals.
-     *  @param venue         Address of the venue used for the withdrawals.
-     *                       For Aave, this is the address of the aToken.
-     *                       For ERC4626, this is the address of the vault.
-     *                       For PSM, this is the address of the PSM.
+     *  @param whitelisted   Whether the vault is allowed to be used for permissionless withdrawals.
      *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      */
     struct VaultConfig {
-        bool      whitelisted;
-        VenueType venueType;
-        address   venue;
-        uint256   penaltyAmount;
+        bool    whitelisted;
+        uint256 penaltyAmount;
     }
 
     /**********************************************************************************************/
     /*** Errors                                                                                 ***/
     /**********************************************************************************************/
 
+    error InsufficientAssetsToCoverPenalty();
     error InsufficientVenueLiquidity(uint256 required, uint256 available);
-    error InvalidAdminAddress();
-    error InvalidVenueAddress();
-    error InvalidMainnetControllerAddress();
-    error InvalidPenaltyRecipientAddress();
-    error InvalidRecipientAddress();
-    error InvalidVaultAddress();
+    error InvalidVenueType();
     error VaultNotWhitelisted();
+    error VenueNotWhitelisted();
+    error ZeroAdminAddress();
+    error ZeroMainnetControllerAddress();
+    error ZeroPenaltyAmount();
+    error ZeroPenaltyRecipientAddress();
+    error ZeroRecipientAddress();
+    error ZeroVaultAddress();
+    error ZeroVenueAddress();
 
     /**********************************************************************************************/
     /*** Events                                                                                 ***/
@@ -54,17 +61,25 @@ interface IPermissionlessWithdrawals {
     /**
      *  @dev   Emitted when the admin updates a vault's configuration.
      *  @param vault         Address of the vault being configured.
-     *  @param venue         Address of the venue being configured.
-     *  @param venueType     The type of venue being configured.
-     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      *  @param whitelisted   Whether the vault is now whitelisted.
+     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      */
     event VaultConfigUpdated(
         address indexed vault,
+        bool            whitelisted,
+        uint256         penaltyAmount
+    );
+
+    /**
+     *  @dev   Emitted when the admin updates a venue's configuration.
+     *  @param venue         Address of the venue being configured.
+     *  @param whitelisted   Whether the venue is now whitelisted.
+     *  @param venueType     The type of venue being configured.
+     */
+    event VenueConfigUpdated(
         address indexed venue,
-        VenueType       venueType,
-        uint256         penaltyAmount,
-        bool            whitelisted
+        bool            whitelisted,
+        VenueType       venueType
     );
 
     /**********************************************************************************************/
@@ -75,16 +90,25 @@ interface IPermissionlessWithdrawals {
      *  @dev   Updates the configuration for a given vault.
      *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
      *  @param vault         Address of the vault to configure.
-     *  @param venue         Address of the venue to configure.
-     *  @param venueType     The type of venue to configure.
-     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      *  @param whitelisted   Whether the vault should be whitelisted.
+     *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
      */
     function updateVaultConfig(
         address   vault,
+        bool      whitelisted,
+        uint256   penaltyAmount
+    ) external;
+
+    /**
+     *  @dev   Updates the configuration for a given venue.
+     *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
+     *  @param venue       Address of the venue to configure.
+     *  @param whitelisted Whether the venue should be whitelisted.
+     *  @param venueType   The type of venue being configured.
+     */
+    function updateVenueConfig(
         address   venue,
         VenueType venueType,
-        uint256   penaltyAmount,
         bool      whitelisted
     ) external;
 
@@ -92,6 +116,11 @@ interface IPermissionlessWithdrawals {
     /*** External functions                                                                     ***/
     /**********************************************************************************************/
 
-    function permissionlessWithdraw(address vault, address recipient, uint256 shares) external;
+    function permissionlessWithdraw(
+        address vault,
+        address venue,
+        address recipient,
+        uint256 shares
+    ) external;
 
 }
