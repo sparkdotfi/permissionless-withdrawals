@@ -3,6 +3,7 @@ pragma solidity ^0.8.34;
 
 import { AccessControlEnumerable } from "../lib/openzeppelin-contracts/contracts/access/extensions/AccessControlEnumerable.sol";
 import { IERC20 }                  from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { ReentrancyGuard }         from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 import { SafeERC20 }               from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { IPermissionlessWithdrawals } from "./interfaces/IPermissionlessWithdrawals.sol";
@@ -41,7 +42,7 @@ interface IMainnetControllerLike {
 
 }
 
-contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlEnumerable {
+contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlEnumerable, ReentrancyGuard {
 
     using SafeERC20 for IERC20;
 
@@ -75,35 +76,43 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
     function updateVaultConfig(
         address   vault,
-        bool      whitelisted,
-        uint256   penaltyAmount
+        uint256   penaltyAmount,
+        bool      whitelisted
     )
-        external override onlyRole(DEFAULT_ADMIN_ROLE)
+        external
+        override
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(vault != address(0), ZeroVaultAddress());
         require(penaltyAmount > 0,   ZeroPenaltyAmount());
 
         vaultConfig[vault] = VaultConfig({
-            whitelisted   : whitelisted,
-            penaltyAmount : penaltyAmount
+            penaltyAmount : penaltyAmount,
+            whitelisted   : whitelisted
         });
 
-        emit VaultConfigUpdated(vault, whitelisted, penaltyAmount);
+        emit VaultConfigUpdated(vault, penaltyAmount, whitelisted);
     }
 
     function updateVenueConfig(
         address   venue,
         VenueType venueType,
         bool      whitelisted
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    )
+        external
+        override
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
         require(venue != address(0), ZeroVenueAddress());
 
         venueConfig[venue] = VenueConfig({
-            whitelisted : whitelisted,
-            venueType   : venueType
+            venueType   : venueType,
+            whitelisted : whitelisted
         });
 
-        emit VenueConfigUpdated(venue, whitelisted, venueType);
+        emit VenueConfigUpdated(venue, venueType, whitelisted);
     }
 
     /**********************************************************************************************/
@@ -115,7 +124,11 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         address venue,
         address recipient,
         uint256 shares
-    ) external override {
+    )
+        external
+        override
+        nonReentrant
+    {
         // Step 1: Validate the vault and recipient
 
         VaultConfig memory vaultConfig_ = vaultConfig[vault];
@@ -141,7 +154,10 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
         // Step 5: Pay penalty amount and transfer remaining assets to the recipient
 
-        require(fullAmount >= vaultConfig_.penaltyAmount, InsufficientAssetsToCoverPenalty());
+        require(
+            fullAmount >= vaultConfig_.penaltyAmount,
+            InsufficientAssetsToCoverPenalty(vaultConfig_.penaltyAmount, fullAmount)
+        );
 
         uint256 recipientAmount = fullAmount - vaultConfig_.penaltyAmount;
 
@@ -198,9 +214,6 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         else if (venueConfig_.venueType == VenueType.PSM) {
             mainnetController.mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
             mainnetController.swapUSDSToUSDC(assetsToWithdraw);
-        }
-        else {
-            revert InvalidVenueType();
         }
 
         uint256 proxyEndingBalance = IERC20(asset).balanceOf(proxy);

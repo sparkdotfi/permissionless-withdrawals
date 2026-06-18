@@ -52,4 +52,9 @@ contract MockERC4626 {
         MockERC20(asset).transfer(receiver, assets);
     }
 
+    function withdraw(uint256 assets, address receiver, address) external returns (uint256) {
+        MockERC20(asset).transfer(receiver, assets);
+        return assets;
+    }
+
 }

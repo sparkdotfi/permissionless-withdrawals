@@ -33,9 +33,8 @@ interface IPermissionlessWithdrawals {
     /*** Errors                                                                                 ***/
     /**********************************************************************************************/
 
-    error InsufficientAssetsToCoverPenalty();
+    error InsufficientAssetsToCoverPenalty(uint256 required, uint256 available);
     error InsufficientVenueLiquidity(uint256 required, uint256 available);
-    error InvalidVenueType();
     error VaultNotWhitelisted();
     error VenueNotWhitelisted();
     error ZeroAdminAddress();
@@ -61,25 +60,25 @@ interface IPermissionlessWithdrawals {
     /**
      *  @dev   Emitted when the admin updates a vault's configuration.
      *  @param vault         Address of the vault being configured.
-     *  @param whitelisted   Whether the vault is now whitelisted.
      *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
+     *  @param whitelisted   Whether the vault is now whitelisted.
      */
     event VaultConfigUpdated(
         address indexed vault,
-        bool            whitelisted,
-        uint256         penaltyAmount
+        uint256         penaltyAmount,
+        bool            whitelisted
     );
 
     /**
      *  @dev   Emitted when the admin updates a venue's configuration.
      *  @param venue         Address of the venue being configured.
-     *  @param whitelisted   Whether the venue is now whitelisted.
      *  @param venueType     The type of venue being configured.
+     *  @param whitelisted   Whether the venue is now whitelisted.
      */
     event VenueConfigUpdated(
         address indexed venue,
-        bool            whitelisted,
-        VenueType       venueType
+        VenueType       venueType,
+        bool            whitelisted
     );
 
     /**********************************************************************************************/
@@ -90,21 +89,21 @@ interface IPermissionlessWithdrawals {
      *  @dev   Updates the configuration for a given vault.
      *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
      *  @param vault         Address of the vault to configure.
-     *  @param whitelisted   Whether the vault should be whitelisted.
      *  @param penaltyAmount The number of assets to be sent to the penalty recipient.
+     *  @param whitelisted   Whether the vault should be whitelisted.
      */
     function updateVaultConfig(
         address   vault,
-        bool      whitelisted,
-        uint256   penaltyAmount
+        uint256   penaltyAmount,
+        bool      whitelisted
     ) external;
 
     /**
      *  @dev   Updates the configuration for a given venue.
      *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
      *  @param venue       Address of the venue to configure.
-     *  @param whitelisted Whether the venue should be whitelisted.
      *  @param venueType   The type of venue being configured.
+     *  @param whitelisted Whether the venue should be whitelisted.
      */
     function updateVenueConfig(
         address   venue,
