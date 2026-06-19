@@ -270,14 +270,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         uint256 recipientAmount = assetsRequested - PENALTY_AMOUNT;
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)));
@@ -301,14 +301,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY - assetsRequested
+            venue                  : address(aToken),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY - assetsRequested
         });
     }
 
@@ -318,14 +318,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         uint256 recipientAmount = assetsRequested - PENALTY_AMOUNT;
 
         _assertBalances({
-            venue           : address(erc4626Venue),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(erc4626Venue),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawERC4626, (address(erc4626Venue), assetsRequested, type(uint256).max)));
@@ -349,14 +349,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(erc4626Venue),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY - assetsRequested
+            venue                  : address(erc4626Venue),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY - assetsRequested
         });
     }
 
@@ -366,14 +366,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         uint256 recipientAmount = assetsRequested - PENALTY_AMOUNT;
 
         _assertBalances({
-            venue           : address(psmVenue),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(psmVenue),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.mintUSDS,       (assetsRequested * withdrawals.USDS_CONVERSION_PRECISION())));
@@ -397,14 +397,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(psmVenue),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY - assetsRequested
+            venue                  : address(psmVenue),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY - assetsRequested
         });
     }
 
@@ -417,14 +417,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         asset.mint(address(almProxy), assetsRequested);
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : 0,
-            proxyAssets     : assetsRequested,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : 0,
+            proxyAssets            : assetsRequested,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)), 0); // No withdrawal needed.
@@ -439,14 +439,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
     }
 
@@ -459,14 +459,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         asset.mint(address(vault), assetsRequested);
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : assetsRequested,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : assetsRequested,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)), 0); // No withdrawal needed.
@@ -481,14 +481,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
     }
 
@@ -507,14 +507,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         uint256 assetsToWithdraw = assetsToTransfer - proxySeed;
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : vaultSeed,
-            proxyAssets     : proxySeed,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : vaultSeed,
+            proxyAssets            : proxySeed,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsToWithdraw)));
@@ -529,14 +529,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY - assetsToWithdraw
+            venue                  : address(aToken),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY - assetsToWithdraw
         });
     }
 
@@ -550,14 +550,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         controller.setVenueDelivery(assetsRequested + excess);
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : USER_SHARES,
-            userAllowance   : USER_SHARES,
-            recipientAssets : 0,
-            penaltyAssets   : 0,
-            vaultAssets     : 0,
-            proxyAssets     : 0,
-            venueAssets     : VENUE_LIQUIDITY
+            venue                  : address(aToken),
+            userShares             : USER_SHARES,
+            userAllowance          : USER_SHARES,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : 0,
+            proxyAssets            : 0,
+            venueAssets            : VENUE_LIQUIDITY
         });
 
         vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)));
@@ -572,14 +572,14 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         _assertReentrancyGuardWrittenToTwice();
 
         _assertBalances({
-            venue           : address(aToken),
-            userShares      : 0,
-            userAllowance   : 0,
-            recipientAssets : recipientAmount,
-            penaltyAssets   : PENALTY_AMOUNT,
-            vaultAssets     : 0,
-            proxyAssets     : excess,
-            venueAssets     : VENUE_LIQUIDITY - (assetsRequested + excess)
+            venue                  : address(aToken),
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : excess,
+            venueAssets            : VENUE_LIQUIDITY - (assetsRequested + excess)
         });
     }
 

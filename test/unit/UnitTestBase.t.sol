@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
-import { Test } from "forge-std/Test.sol";
+import { Test } from "../../lib/forge-std/src/Test.sol";
 
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
 import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.sol";
@@ -80,12 +80,12 @@ contract UnitTestBase is Test {
         vm.store(address(withdrawals), _REENTRANCY_GUARD_SLOT, _REENTRANCY_GUARD_ENTERED);
     }
 
-    function _assertReentrancyGuardWrittenToTwice() internal {
+    function _assertReentrancyGuardWrittenToTwice() internal view {
         _assertReentrancyGuardWrittenToTwice(address(withdrawals));
     }
 
-    function _assertReentrancyGuardWrittenToTwice(address withdrawals) internal {
-        ( , bytes32[] memory writeSlots ) = vm.accesses(withdrawals);
+    function _assertReentrancyGuardWrittenToTwice(address withdrawals_) internal view {
+        ( , bytes32[] memory writeSlots ) = vm.accesses(withdrawals_);
 
         uint256 count = 0;
 
@@ -96,7 +96,7 @@ contract UnitTestBase is Test {
         }
 
         assertEq(count, 2);
-        assertEq(vm.load(withdrawals, _REENTRANCY_GUARD_SLOT), _REENTRANCY_GUARD_NOT_ENTERED);
+        assertEq(vm.load(withdrawals_, _REENTRANCY_GUARD_SLOT), _REENTRANCY_GUARD_NOT_ENTERED);
     }
 
     function _assertBalances(
@@ -104,7 +104,7 @@ contract UnitTestBase is Test {
         uint256 userShares,
         uint256 userAllowance,
         uint256 recipientAssets,
-        uint256 penaltyAssets,
+        uint256 penaltyRecipientAssets,
         uint256 vaultAssets,
         uint256 proxyAssets,
         uint256 venueAssets
@@ -114,7 +114,7 @@ contract UnitTestBase is Test {
         assertEq(vault.allowance(user, address(withdrawals)), userAllowance);
 
         assertEq(asset.balanceOf(recipient),            recipientAssets);
-        assertEq(asset.balanceOf(penaltyRecipient),     penaltyAssets);
+        assertEq(asset.balanceOf(penaltyRecipient),     penaltyRecipientAssets);
         assertEq(asset.balanceOf(address(vault)),       vaultAssets);
         assertEq(asset.balanceOf(address(almProxy)),    proxyAssets);
         assertEq(asset.balanceOf(venue),                venueAssets);
