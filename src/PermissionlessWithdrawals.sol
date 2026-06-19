@@ -137,22 +137,42 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         require(venueConfig[venue].whitelisted, VenueNotWhitelisted());
         require(recipient != address(0),        ZeroRecipientAddress());
 
-        // Step 2: Withdraw the assets from the venue
+        // Step 2: Calculate additional amount needed for user withdrawal
 
-        address asset           = IERC4626Like(vault).asset();
-        uint256 assetsRequested = IERC4626Like(vault).convertToAssets(shares);
-        uint256 assetsToTransfer = _validateAndWithdrawFromVenue(vault, venue, asset, assetsRequested);
+        address asset = IERC4626Like(vault).asset();
+        address proxy = mainnetController.proxy();
+        
+        uint256 assetsRequested      = IERC4626Like(vault).convertToAssets(shares);
+        uint256 proxyStartingBalance = IERC20(asset).balanceOf(proxy);
+        uint256 vaultStartingBalance = IERC20(asset).balanceOf(vault);
 
-        // Step 3: Transfer withdrawn assets to the vault
+        // Total amount to transfer to the vault for the withdrawal
+        uint256 assetsToTransfer = assetsRequested > vaultStartingBalance
+            ? assetsRequested - vaultStartingBalance
+            : 0;
+
+        // Additional amount needed to be sent to the ALMProxy to send to the vault
+        uint256 assetsToWithdraw = assetsToTransfer > proxyStartingBalance
+            ? assetsToTransfer - proxyStartingBalance
+            : 0;
+
+        // Step 3: Withdraw the assets from the venue if necessary
+
+        if (assetsToWithdraw > 0) {
+            _withdrawFromVenue(venue, asset, proxy, assetsToWithdraw, proxyStartingBalance);
+        }
+
+        // Step 4: Transfer withdrawn assets to the vault if necessary
 
         if (assetsToTransfer > 0) {
             mainnetController.transferAsset(asset, vault, assetsToTransfer);
         }
+        
+        // Step 5: Redeem full shares amount
 
-        // Step 4: Redeem full shares amount
         uint256 fullAmount = IERC4626Like(vault).redeem(shares, address(this), msg.sender);
 
-        // Step 5: Pay penalty amount and transfer remaining assets to the recipient
+        // Step 6: Pay penalty amount and transfer remaining assets to the recipient
 
         require(
             fullAmount >= vaultConfig_.penaltyAmount,
@@ -177,25 +197,13 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     /*** Internal helper functions                                                              ***/
     /**********************************************************************************************/
 
-    function _validateAndWithdrawFromVenue(
-        address vault,
+    function _withdrawFromVenue(
         address venue,
         address asset,
-        uint256 assetsRequested
-    ) internal returns (uint256 assetsToTransfer) {
-        address proxy                = mainnetController.proxy();
-        uint256 proxyStartingBalance = IERC20(asset).balanceOf(proxy);
-        uint256 vaultStartingBalance = IERC20(asset).balanceOf(vault);
-
-        // Amount to move into the vault.
-        assetsToTransfer = assetsRequested - _min(assetsRequested, vaultStartingBalance);
-
-        // Amount proxy must pull from the venue.
-        uint256 assetsToWithdraw = assetsToTransfer - _min(assetsToTransfer, proxyStartingBalance);
-
-        // Proxy already holds enough assets to transfer, skip the venue withdrawal.
-        if (assetsToWithdraw == 0) return assetsToTransfer;
-
+        address proxy,
+        uint256 assetsToWithdraw,
+        uint256 proxyStartingBalance
+    ) internal {
         VenueConfig memory venueConfig_ = venueConfig[venue];
 
         if (venueConfig_.venueType == VenueType.AAVE) {
@@ -216,16 +224,13 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
             mainnetController.swapUSDSToUSDC(assetsToWithdraw);
         }
 
-        uint256 proxyEndingBalance = IERC20(asset).balanceOf(proxy);
+        uint256 amountWithdrawn 
+            = IERC20(asset).balanceOf(proxy) - proxyStartingBalance;
 
         require(
-            proxyEndingBalance >= assetsToTransfer,
-            InsufficientVenueLiquidity(assetsToTransfer, proxyEndingBalance)
+            amountWithdrawn >= assetsToWithdraw,
+            InsufficientVenueLiquidity(assetsToWithdraw, amountWithdrawn)
         );
-    }
-
-    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
     }
 
 }
