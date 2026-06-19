@@ -14,9 +14,15 @@ import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.
 
 interface IMainnetControllerLike {
 
+    function grantRole(bytes32 role, address account) external;
+
     function mintUSDS(uint256 usdsAmount) external;
 
     function proxy() external view returns (address proxy);
+
+    function RELAYER() external view returns (bytes32);
+
+    function removeRelayer(address relayer) external;
 
     function swapUSDSToUSDC(uint256 usdcAmount) external;
 
@@ -40,7 +46,11 @@ interface ISparkVaultLike {
 
     function convertToAssets(uint256 shares) external view returns (uint256 assets);
 
+    function convertToShares(uint256 assets) external view returns (uint256 shares);
+
     function mint(uint256 shares, address receiver) external returns (uint256 assets);
+
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
 
 }
 
@@ -71,6 +81,7 @@ contract ForkTestBase is Test {
     ISparkVaultLike internal spUSDTVault  = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDT);
 
     address internal admin            = Ethereum.SPARK_PROXY;
+    address internal freezer          = Ethereum.ALM_FREEZER_MULTISIG;
     address internal penaltyRecipient = makeAddr("penaltyRecipient");
     address internal user             = makeAddr("user");
     address internal recipient        = makeAddr("recipient");
@@ -89,6 +100,9 @@ contract ForkTestBase is Test {
         // Step 2: Configure the withdrawals contract.
 
         vm.startPrank(admin);
+
+        mainnetController.grantRole(mainnetController.RELAYER(), address(withdrawals));
+
         withdrawals.updateVaultConfig(address(spETHVault),   SPETH_PENALTY_AMOUNT,   true);
         // withdrawals.updateVaultConfig(address(spPYUSDVault), SPPYUSD_PENALTY_AMOUNT, true); // TODO: Confirm that we are onboarding this vault or not
         withdrawals.updateVaultConfig(address(spUSDCVault),  SPUSDC_PENALTY_AMOUNT,  true);
@@ -96,7 +110,7 @@ contract ForkTestBase is Test {
 
         withdrawals.updateVenueConfig(SparkLend.WETH_SPTOKEN,   IPermissionlessWithdrawals.VenueType.AAVE,    true);
         // withdrawals.updateVenueConfig(SparkLend.PYUSD_SPTOKEN, IPermissionlessWithdrawals.VenueType.ERC4626, true); // TODO: Confirm that we are onboarding this venue or not
-        withdrawals.updateVenueConfig(SparkLend.USDC_SPTOKEN,  IPermissionlessWithdrawals.VenueType.PSM,     true);
+        withdrawals.updateVenueConfig(Ethereum.PSM,            IPermissionlessWithdrawals.VenueType.PSM,     true);
         withdrawals.updateVenueConfig(SparkLend.USDT_SPTOKEN,  IPermissionlessWithdrawals.VenueType.AAVE,    true);
         vm.stopPrank();
     }
@@ -164,11 +178,11 @@ contract ForkTestBase is Test {
         assertEq(vault.balanceOf(address(withdrawals)),       0);
         assertEq(vault.allowance(user, address(withdrawals)), userAllowance);
 
-        assertEq(asset.balanceOf(recipient),            recipientAssets);
-        assertEq(asset.balanceOf(penaltyRecipient),     penaltyRecipientAssets);
-        assertEq(asset.balanceOf(address(vault)),       vaultAssets);
-        assertEq(asset.balanceOf(Ethereum.ALM_PROXY),   proxyAssets);
-        assertEq(asset.balanceOf(address(withdrawals)), 0);
+        assertEq(asset.balanceOf(recipient),                 recipientAssets);
+        assertEq(asset.balanceOf(penaltyRecipient),          penaltyRecipientAssets);
+        assertEq(asset.balanceOf(address(vault)),            vaultAssets);
+        assertEq(asset.balanceOf(mainnetController.proxy()), proxyAssets);
+        assertEq(asset.balanceOf(address(withdrawals)),      0);
     }
 
 }
