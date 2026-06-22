@@ -33,6 +33,7 @@ interface IPermissionlessWithdrawals {
     /*** Errors                                                                                 ***/
     /**********************************************************************************************/
 
+    error IncorrectVenue();
     error InsufficientAssetsToCoverPenalty(uint256 required, uint256 available);
     error InsufficientVenueLiquidity(uint256 required, uint256 available);
     error VaultNotWhitelisted();
@@ -71,11 +72,13 @@ interface IPermissionlessWithdrawals {
 
     /**
      *  @dev   Emitted when the admin updates a venue's configuration.
-     *  @param venue         Address of the venue being configured.
-     *  @param venueType     The type of venue being configured.
-     *  @param whitelisted   Whether the venue is now whitelisted.
+     *  @param vault       Address of the vault being configured.
+     *  @param venue       Address of the venue being configured.
+     *  @param venueType   The type of venue being configured.
+     *  @param whitelisted Whether the venue is now whitelisted.
      */
     event VenueConfigUpdated(
+        address indexed vault,
         address indexed venue,
         VenueType       venueType,
         bool            whitelisted
@@ -101,11 +104,13 @@ interface IPermissionlessWithdrawals {
     /**
      *  @dev   Updates the configuration for a given venue.
      *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
+     *  @param vault       Address of the vault being configured.
      *  @param venue       Address of the venue to configure.
      *  @param venueType   The type of venue being configured.
      *  @param whitelisted Whether the venue should be whitelisted.
      */
     function updateVenueConfig(
+        address   vault,
         address   venue,
         VenueType venueType,
         bool      whitelisted

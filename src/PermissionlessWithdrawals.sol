@@ -8,6 +8,12 @@ import { SafeERC20 }               from "../lib/openzeppelin-contracts/contracts
 
 import { IPermissionlessWithdrawals } from "./interfaces/IPermissionlessWithdrawals.sol";
 
+interface IATokenLike {
+
+    function UNDERLYING_ASSET_ADDRESS() external view returns (address);
+
+}
+
 interface IERC4626Like {
 
     function allowance(address owner, address spender) external view returns (uint256);
@@ -42,6 +48,12 @@ interface IMainnetControllerLike {
 
 }
 
+interface PSMLike {
+
+    function gem() external view returns (address);
+
+}
+
 contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlEnumerable, ReentrancyGuard {
 
     using SafeERC20 for IERC20;
@@ -56,8 +68,8 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
     address public immutable penaltyRecipient;
 
-    mapping(address vault => VaultConfig config) public vaultConfig;
-    mapping(address venue => VenueConfig config) public venueConfig;
+    mapping(address vault => VaultConfig config)                           public vaultConfig;
+    mapping(address vault => mapping(address venue => VenueConfig config)) public venueConfig;
 
     constructor(address admin, address mainnetController_, address penaltyRecipient_) {
         require(admin              != address(0), ZeroAdminAddress());
@@ -96,6 +108,7 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     }
 
     function updateVenueConfig(
+        address   vault,
         address   venue,
         VenueType venueType,
         bool      whitelisted
@@ -105,14 +118,15 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
+        require(vault != address(0), ZeroVaultAddress());
         require(venue != address(0), ZeroVenueAddress());
 
-        venueConfig[venue] = VenueConfig({
+        venueConfig[vault][venue] = VenueConfig({
             venueType   : venueType,
             whitelisted : whitelisted
         });
 
-        emit VenueConfigUpdated(venue, venueType, whitelisted);
+        emit VenueConfigUpdated(vault, venue, venueType, whitelisted);
     }
 
     /**********************************************************************************************/
@@ -129,19 +143,19 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         override
         nonReentrant
     {
-        // Step 1: Validate the vault and recipient
+        // Step 1: Validate the vault, venue and recipient
 
         VaultConfig memory vaultConfig_ = vaultConfig[vault];
 
-        require(vaultConfig_.whitelisted,       VaultNotWhitelisted());
-        require(venueConfig[venue].whitelisted, VenueNotWhitelisted());
-        require(recipient != address(0),        ZeroRecipientAddress());
+        require(vaultConfig_.whitelisted,              VaultNotWhitelisted());
+        require(venueConfig[vault][venue].whitelisted, VenueNotWhitelisted());
+        require(recipient != address(0),               ZeroRecipientAddress());
 
         // Step 2: Calculate additional amount needed for user withdrawal
 
         address asset = IERC4626Like(vault).asset();
         address proxy = mainnetController.proxy();
-        
+
         uint256 assetsRequested      = IERC4626Like(vault).convertToAssets(shares);
         uint256 proxyStartingBalance = IERC20(asset).balanceOf(proxy);
         uint256 vaultStartingBalance = IERC20(asset).balanceOf(vault);
@@ -159,7 +173,7 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         // Step 3: Withdraw the assets from the venue if necessary
 
         if (assetsToWithdraw > 0) {
-            _withdrawFromVenue(venue, asset, proxy, assetsToWithdraw, proxyStartingBalance);
+            _withdrawFromVenue(vault, venue, asset, proxy, assetsToWithdraw, proxyStartingBalance);
         }
 
         // Step 4: Transfer withdrawn assets to the vault if necessary
@@ -167,7 +181,7 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
         if (assetsToTransfer > 0) {
             mainnetController.transferAsset(asset, vault, assetsToTransfer);
         }
-        
+
         // Step 5: Redeem full shares amount
 
         uint256 fullAmount = IERC4626Like(vault).redeem(shares, address(this), msg.sender);
@@ -198,21 +212,26 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
     /**********************************************************************************************/
 
     function _withdrawFromVenue(
+        address vault,
         address venue,
         address asset,
         address proxy,
         uint256 assetsToWithdraw,
         uint256 proxyStartingBalance
     ) internal {
-        VenueConfig memory venueConfig_ = venueConfig[venue];
+        VenueConfig memory venueConfig_ = venueConfig[vault][venue];
 
         if (venueConfig_.venueType == VenueType.AAVE) {
+            require(IATokenLike(venue).UNDERLYING_ASSET_ADDRESS() == asset, IncorrectVenue());
+
             mainnetController.withdrawAave({
                 aToken : venue,
                 amount : assetsToWithdraw
             });
         }
         else if (venueConfig_.venueType == VenueType.ERC4626) {
+            require(IERC4626Like(venue).asset() == asset, IncorrectVenue());
+
             mainnetController.withdrawERC4626({
                 token       : venue,
                 amount      : assetsToWithdraw,
@@ -220,6 +239,8 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
             });
         }
         else if (venueConfig_.venueType == VenueType.PSM) {
+            require(PSMLike(venue).gem() == asset, IncorrectVenue());
+
             mainnetController.mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
             mainnetController.swapUSDSToUSDC(assetsToWithdraw);
         }
