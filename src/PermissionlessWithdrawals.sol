@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
-import { AccessControlEnumerable } from "../lib/openzeppelin-contracts/contracts/access/extensions/AccessControlEnumerable.sol";
-import { IERC20 }                  from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import { ReentrancyGuard }         from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-import { SafeERC20 }               from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC1967Utils }    from "../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import { IERC20 }          from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { ReentrancyGuard } from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import { SafeERC20 }       from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import { AccessControlEnumerableUpgradeable }
+    from "../lib/openzeppelin-contracts-upgradeable/contracts/access/extensions/AccessControlEnumerableUpgradeable.sol";
+
+import { UUPSUpgradeable }
+    from "../lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import { IPermissionlessWithdrawals } from "./interfaces/IPermissionlessWithdrawals.sol";
 
@@ -54,24 +60,40 @@ interface PSMLike {
 
 }
 
-contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlEnumerable, ReentrancyGuard {
+contract PermissionlessWithdrawals is
+    IPermissionlessWithdrawals,
+    AccessControlEnumerableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuard
+{
 
     using SafeERC20 for IERC20;
 
     /**********************************************************************************************/
-    /*** Declarations and constructor                                                           ***/
+    /*** Declarations                                                                           ***/
     /**********************************************************************************************/
 
+    string  public constant version                   = "1";
     uint256 public constant USDS_CONVERSION_PRECISION = 1e12;
 
-    IMainnetControllerLike public immutable mainnetController;
-
-    address public immutable penaltyRecipient;
+    IMainnetControllerLike public mainnetController;
+    address                public penaltyRecipient;
 
     mapping(address vault => VaultConfig config)                           public vaultConfig;
     mapping(address vault => mapping(address venue => VenueConfig config)) public venueConfig;
 
-    constructor(address admin, address mainnetController_, address penaltyRecipient_) {
+    /**********************************************************************************************/
+    /*** Initialization and upgradeability                                                      ***/
+    /**********************************************************************************************/
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address admin, address mainnetController_, address penaltyRecipient_)
+        external
+        initializer
+    {
         require(admin              != address(0), ZeroAdminAddress());
         require(mainnetController_ != address(0), ZeroMainnetControllerAddress());
         require(penaltyRecipient_  != address(0), ZeroPenaltyRecipientAddress());
@@ -80,6 +102,12 @@ contract PermissionlessWithdrawals is IPermissionlessWithdrawals, AccessControlE
 
         mainnetController = IMainnetControllerLike(mainnetController_);
         penaltyRecipient  = penaltyRecipient_;
+    }
+
+    function _authorizeUpgrade(address) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    function getImplementation() external view returns (address) {
+        return ERC1967Utils.getImplementation();
     }
 
     /**********************************************************************************************/

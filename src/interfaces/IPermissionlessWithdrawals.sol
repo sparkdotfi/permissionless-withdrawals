@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
-interface IPermissionlessWithdrawals {
+import { IAccessControlEnumerable } from "../../lib/openzeppelin-contracts/contracts/access/extensions/IAccessControlEnumerable.sol";
+
+interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /**********************************************************************************************/
     /*** Types                                                                                  ***/
@@ -126,5 +128,27 @@ interface IPermissionlessWithdrawals {
         address recipient,
         uint256 shares
     ) external;
+
+    /**********************************************************************************************/
+    /*** View/Pure functions                                                                    ***/
+    /**********************************************************************************************/
+
+    function getImplementation() external view returns (address);
+
+    function penaltyRecipient() external view returns (address);
+
+    function USDS_CONVERSION_PRECISION() external pure returns (uint256);
+
+    function vaultConfig(address vault)
+        external
+        view
+        returns (bool whitelisted, uint256 penaltyAmount);
+
+    function venueConfig(address vault, address venue)
+        external
+        view
+        returns (bool whitelisted, VenueType venueType);
+
+    function version() external pure returns (string memory);
 
 }
