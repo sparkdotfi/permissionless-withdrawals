@@ -17,3 +17,6 @@
 [submodule "lib/diamond-pau"]
 	path = lib/diamond-pau
 	url = https://github.com/sky-ecosystem/diamond-pau.git
+[submodule "lib/sky-pau-registry"]
+	path = lib/sky-pau-registry
+	url = https://github.com/sky-ecosystem/sky-pau-registry

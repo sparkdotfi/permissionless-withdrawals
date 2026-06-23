@@ -3,38 +3,15 @@ pragma solidity ^0.8.34;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
-import { IERC20 }    from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import { SafeERC20 } from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import { IERC20 }       from "../../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 }    from "../../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC1967Proxy } from "../../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import { Ethereum }  from "../../lib/spark-address-registry/src/Ethereum.sol";
 import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
 import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.sol";
-
-interface IMainnetControllerLike {
-
-    function grantRole(bytes32 role, address account) external;
-
-    function mintUSDS(uint256 usdsAmount) external;
-
-    function proxy() external view returns (address proxy);
-
-    function RELAYER() external view returns (bytes32);
-
-    function removeRelayer(address relayer) external;
-
-    function swapUSDSToUSDC(uint256 usdcAmount) external;
-
-    function transferAsset(address asset, address destination, uint256 amount) external;
-
-    function withdrawAave(address aToken, uint256 amount) external returns (uint256);
-
-    function withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
-        external
-        returns (uint256 shares);
-
-}
 
 interface ISparkVaultLike {
 
@@ -54,7 +31,7 @@ interface ISparkVaultLike {
 
 }
 
-contract ForkTestBase is Test {
+abstract contract ForkTestBase is Test {
 
     using SafeERC20 for IERC20;
 
@@ -65,20 +42,17 @@ contract ForkTestBase is Test {
 
     bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
 
-    uint256 internal constant SPETH_PENALTY_AMOUNT   = 10e18;
-    uint256 internal constant SPPYUSD_PENALTY_AMOUNT = 20_000e6;
-    uint256 internal constant SPUSDC_PENALTY_AMOUNT  = 20_000e6;
-    uint256 internal constant SPUSDT_PENALTY_AMOUNT  = 20_000e6;
+    uint256 internal constant SPETH_PENALTY_AMOUNT  = 10e18;
+    uint256 internal constant SPUSDC_PENALTY_AMOUNT = 20_000e6;
+    uint256 internal constant SPUSDT_PENALTY_AMOUNT = 20_000e6;
 
-    IERC20 internal WETH  = IERC20(Ethereum.WETH);
-    IERC20 internal PYUSD = IERC20(Ethereum.PYUSD);
-    IERC20 internal USDC  = IERC20(Ethereum.USDC);
-    IERC20 internal USDT  = IERC20(Ethereum.USDT);
+    IERC20 internal WETH = IERC20(Ethereum.WETH);
+    IERC20 internal USDC = IERC20(Ethereum.USDC);
+    IERC20 internal USDT = IERC20(Ethereum.USDT);
 
-    ISparkVaultLike internal spETHVault   = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPETH);
-    ISparkVaultLike internal spPYUSDVault = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPPYUSD);
-    ISparkVaultLike internal spUSDCVault  = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDC);
-    ISparkVaultLike internal spUSDTVault  = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDT);
+    ISparkVaultLike internal spETHVault  = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPETH);
+    ISparkVaultLike internal spUSDCVault = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDC);
+    ISparkVaultLike internal spUSDTVault = ISparkVaultLike(Ethereum.SPARK_VAULT_V2_SPUSDT);
 
     address internal admin            = Ethereum.SPARK_PROXY;
     address internal freezer          = Ethereum.ALM_FREEZER_MULTISIG;
@@ -86,37 +60,71 @@ contract ForkTestBase is Test {
     address internal user             = makeAddr("user");
     address internal recipient        = makeAddr("recipient");
 
-    IMainnetControllerLike    internal mainnetController;
+    address                   internal controller;
+    address                   internal proxy;
     PermissionlessWithdrawals internal withdrawals;
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.createSelectFork(getChain("mainnet").rpcUrl, _getBlock());
 
-        // Step 1: Initialize the mainnet controller and deploy the withdrawals contract.
+        // Step 1: Initialize the controller and deploy the withdrawals contract behind a proxy.
 
-        mainnetController = IMainnetControllerLike(Ethereum.ALM_CONTROLLER);
-        withdrawals       = new PermissionlessWithdrawals(admin, address(mainnetController), penaltyRecipient);
+        controller  = _controllerAddress();
+        withdrawals = _deployWithdrawals(admin, controller, penaltyRecipient);
+        proxy       = _proxy();
 
-        // Step 2: Configure the withdrawals contract.
+        // Step 2: Grant the relayer-equivalent role to the withdrawals contract.
+
+        _grantRelayerRole(address(withdrawals));
+
+        // Step 3: Configure the withdrawals contract.
 
         vm.startPrank(admin);
 
-        mainnetController.grantRole(mainnetController.RELAYER(), address(withdrawals));
+        withdrawals.updateVaultConfig(address(spETHVault),  SPETH_PENALTY_AMOUNT,  true);
+        withdrawals.updateVaultConfig(address(spUSDCVault), SPUSDC_PENALTY_AMOUNT, true);
+        withdrawals.updateVaultConfig(address(spUSDTVault), SPUSDT_PENALTY_AMOUNT, true);
 
-        withdrawals.updateVaultConfig(address(spETHVault),   SPETH_PENALTY_AMOUNT,   true);
-        // withdrawals.updateVaultConfig(address(spPYUSDVault), SPPYUSD_PENALTY_AMOUNT, true); // TODO: Confirm that we are onboarding this vault or not
-        withdrawals.updateVaultConfig(address(spUSDCVault),  SPUSDC_PENALTY_AMOUNT,  true);
-        withdrawals.updateVaultConfig(address(spUSDTVault),  SPUSDT_PENALTY_AMOUNT,  true);
+        withdrawals.updateVenueConfig(address(spETHVault),  SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.updateVenueConfig(address(spUSDCVault), Ethereum.PSM,           IPermissionlessWithdrawals.VenueType.PSM,  true);
+        withdrawals.updateVenueConfig(address(spUSDTVault), SparkLend.USDT_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE, true);
 
-        withdrawals.updateVenueConfig(SparkLend.WETH_SPTOKEN,   IPermissionlessWithdrawals.VenueType.AAVE,    true);
-        // withdrawals.updateVenueConfig(SparkLend.PYUSD_SPTOKEN, IPermissionlessWithdrawals.VenueType.ERC4626, true); // TODO: Confirm that we are onboarding this venue or not
-        withdrawals.updateVenueConfig(Ethereum.PSM,            IPermissionlessWithdrawals.VenueType.PSM,     true);
-        withdrawals.updateVenueConfig(SparkLend.USDT_SPTOKEN,  IPermissionlessWithdrawals.VenueType.AAVE,    true);
         vm.stopPrank();
     }
 
-    function _getBlock() internal pure returns (uint256) {
+    function _getBlock() internal pure virtual returns (uint256) {
         return 25345523; // Jun-18-2026 04:04:23 PM +UTC
+    }
+
+    /**********************************************************************************************/
+    /*** Controller-specific deploy and role hooks                                              ***/
+    /**********************************************************************************************/
+
+    // Deploys a fresh implementation of the concrete withdrawals contract under test.
+    function _deployImplementation() internal virtual returns (PermissionlessWithdrawals);
+
+    // Returns the controller address for the version under test.
+    function _controllerAddress() internal virtual returns (address);
+
+    // Returns the ALMProxy that custodies funds for the controller under test.
+    function _proxy() internal virtual returns (address);
+
+    // Grants the relayer-equivalent role (legacy: RELAYER, diamond: ALLOCATOR_ROLE) to the account.
+    function _grantRelayerRole(address account) internal virtual;
+
+    // Deploys the implementation behind an ERC1967 proxy and initializes it.
+    function _deployWithdrawals(address admin_, address controller_, address penaltyRecipient_)
+        internal
+        returns (PermissionlessWithdrawals)
+    {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
+        bytes memory initData = abi.encodeCall(
+            PermissionlessWithdrawals.initialize,
+            (admin_, controller_, penaltyRecipient_)
+        );
+
+        return PermissionlessWithdrawals(address(new ERC1967Proxy(address(implementation), initData)));
     }
 
     /**********************************************************************************************/
@@ -178,11 +186,11 @@ contract ForkTestBase is Test {
         assertEq(vault.balanceOf(address(withdrawals)),       0);
         assertEq(vault.allowance(user, address(withdrawals)), userAllowance);
 
-        assertEq(asset.balanceOf(recipient),                 recipientAssets);
-        assertEq(asset.balanceOf(penaltyRecipient),          penaltyRecipientAssets);
-        assertEq(asset.balanceOf(address(vault)),            vaultAssets);
-        assertEq(asset.balanceOf(mainnetController.proxy()), proxyAssets);
-        assertEq(asset.balanceOf(address(withdrawals)),      0);
+        assertEq(asset.balanceOf(recipient),            recipientAssets);
+        assertEq(asset.balanceOf(penaltyRecipient),     penaltyRecipientAssets);
+        assertEq(asset.balanceOf(address(vault)),       vaultAssets);
+        assertEq(asset.balanceOf(proxy),                proxyAssets);
+        assertEq(asset.balanceOf(address(withdrawals)), 0);
     }
 
 }

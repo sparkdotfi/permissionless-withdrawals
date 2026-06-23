@@ -22,11 +22,7 @@ interface IATokenLike {
 
 interface IERC4626Like {
 
-    function allowance(address owner, address spender) external view returns (uint256);
-
     function asset() external view returns (address);
-
-    function balanceOf(address owner) external view returns (uint256);
 
     function convertToAssets(uint256 shares) external view returns (uint256 assets);
 
@@ -36,7 +32,7 @@ interface IERC4626Like {
 
 }
 
-interface PSMLike {
+interface IPSMLike {
 
     function gem() external view returns (address);
 
@@ -242,7 +238,7 @@ abstract contract PermissionlessWithdrawals is
             _withdrawERC4626(venue, assetsToWithdraw, type(uint256).max);
         }
         else if (venueConfig_.venueType == VenueType.PSM) {
-            require(PSMLike(venue).gem() == asset, IncorrectVenue());
+            require(IPSMLike(venue).gem() == asset, IncorrectVenue());
 
             _mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
             _swapUSDSToUSDC(assetsToWithdraw);
