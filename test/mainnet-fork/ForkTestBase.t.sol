@@ -40,7 +40,8 @@ abstract contract ForkTestBase is Test {
     bytes32 internal constant _REENTRANCY_GUARD_NOT_ENTERED = bytes32(uint256(1));
     bytes32 internal constant _REENTRANCY_GUARD_ENTERED     = bytes32(uint256(2));
 
-    bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
+    bytes32 internal constant DEFAULT_ADMIN_ROLE        = bytes32(0);
+    uint256 internal constant USDS_CONVERSION_PRECISION = 1e12;
 
     uint256 internal constant SPETH_PENALTY_AMOUNT  = 10e18;
     uint256 internal constant SPUSDC_PENALTY_AMOUNT = 20_000e6;
@@ -73,7 +74,7 @@ abstract contract ForkTestBase is Test {
         withdrawals = _deployWithdrawals(admin, controller, penaltyRecipient);
         proxy       = _proxy();
 
-        // Step 2: Grant the relayer-equivalent role to the withdrawals contract.
+        // Step 2: Grant the relayer/allocator role to the withdrawals contract.
 
         _grantRelayerRole(address(withdrawals));
 
@@ -107,7 +108,7 @@ abstract contract ForkTestBase is Test {
     function _controllerAddress() internal virtual returns (address);
 
     // Returns the ALMProxy that custodies funds for the controller under test.
-    function _proxy() internal virtual returns (address);
+    function _proxy() internal view virtual returns (address);
 
     // Grants the relayer-equivalent role (legacy: RELAYER, diamond: ALLOCATOR_ROLE) to the account.
     function _grantRelayerRole(address account) internal virtual;

@@ -26,30 +26,30 @@ interface IMainnetControllerDiamond {
 contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
 
     function _proxy() internal view override returns (address) {
-        return IMainnetControllerDiamond(mainnetController).proxy();
+        return IMainnetControllerDiamond(controller).proxy();
     }
 
     function _transferAsset(address asset, address destination, uint256 amount)
         internal
         override
     {
-        IMainnetControllerDiamond(mainnetController).transferAsset_transfer(asset, destination, amount);
+        IMainnetControllerDiamond(controller).transferAsset_transfer(asset, destination, amount);
     }
 
     function _withdrawAave(address aToken, uint256 amount) internal override {
-        IMainnetControllerDiamond(mainnetController).aave_withdraw(aToken, amount);
+        IMainnetControllerDiamond(controller).aave_withdraw(aToken, amount);
     }
 
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal override {
-        IMainnetControllerDiamond(mainnetController).erc4626_withdraw(token, amount, maxSharesIn);
+        IMainnetControllerDiamond(controller).erc4626_withdraw(token, amount, maxSharesIn);
     }
 
     function _mintUSDS(uint256 usdsAmount) internal override {
-        IMainnetControllerDiamond(mainnetController).usds_mint(usdsAmount);
+        IMainnetControllerDiamond(controller).usds_mint(usdsAmount);
     }
 
     function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        IMainnetControllerDiamond(mainnetController).psm_swapUSDSToUSDC(usdcAmount);
+        IMainnetControllerDiamond(controller).psm_swapUSDSToUSDC(usdcAmount);
     }
 
 }

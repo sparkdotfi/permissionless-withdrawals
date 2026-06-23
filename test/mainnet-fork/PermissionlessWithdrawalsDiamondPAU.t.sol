@@ -148,10 +148,13 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         return controller_;
     }
 
-    function _proxy() internal override returns (address) {
+    function _proxy() internal pure override returns (address) {
         return Ethereum.ALM_PROXY;
     }
 
+    // NOTE: The shared test base names the permission hook after the legacy controller's RELAYER role.
+    //       The diamond PAU controller has no RELAYER role, ALLOCATOR_ROLE is its equivalent, so these
+    //       hooks grant, revoke, and return ALLOCATOR_ROLE.
     function _grantRelayerRole(address account) internal override {
         vm.prank(Ethereum.SPARK_PROXY);
         IAccessControlsLike(accessControls).grantRole(ALLOCATOR_ROLE, account);
@@ -162,7 +165,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         IAccessControlsLike(accessControls).revokeRole(ALLOCATOR_ROLE, account);
     }
 
-    function _relayerRole() internal view override returns (bytes32) {
+    function _relayerRole() internal pure override returns (bytes32) {
         return ALLOCATOR_ROLE;
     }
 

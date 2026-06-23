@@ -51,11 +51,12 @@ abstract contract PermissionlessWithdrawals is
     /*** Declarations                                                                           ***/
     /**********************************************************************************************/
 
-    string  public constant version                   = "1";
-    uint256 public constant USDS_CONVERSION_PRECISION = 1e12;
+    string  public constant override VERSION = "1.0.0";
 
-    address public mainnetController;
-    address public penaltyRecipient;
+    uint256 public constant override USDS_CONVERSION_PRECISION = 1e12;
+
+    address public override controller;
+    address public override penaltyRecipient;
 
     mapping(address vault => VaultConfig config) public vaultConfig;
 
@@ -69,18 +70,18 @@ abstract contract PermissionlessWithdrawals is
         _disableInitializers();
     }
 
-    function initialize(address admin, address mainnetController_, address penaltyRecipient_)
+    function initialize(address admin, address controller_, address penaltyRecipient_)
         external
         initializer
     {
-        require(admin              != address(0), ZeroAdminAddress());
-        require(mainnetController_ != address(0), ZeroMainnetControllerAddress());
-        require(penaltyRecipient_  != address(0), ZeroPenaltyRecipientAddress());
+        require(admin             != address(0), ZeroAdminAddress());
+        require(controller_       != address(0), ZeroControllerAddress());
+        require(penaltyRecipient_ != address(0), ZeroPenaltyRecipientAddress());
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 
-        mainnetController = mainnetController_;
-        penaltyRecipient  = penaltyRecipient_;
+        controller       = controller_;
+        penaltyRecipient = penaltyRecipient_;
     }
 
     function _authorizeUpgrade(address) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -130,6 +131,19 @@ abstract contract PermissionlessWithdrawals is
         venueTypes[vault][venue] = venueType;
 
         emit VenueTypeSet(vault, venue, venueType);
+    }
+
+    function setPenaltyRecipient(address penaltyRecipient_)
+        external
+        override
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        require(penaltyRecipient_ != address(0), ZeroPenaltyRecipientAddress());
+
+        penaltyRecipient = penaltyRecipient_;
+
+        emit PenaltyRecipientSet(penaltyRecipient_);
     }
 
     /**********************************************************************************************/
@@ -186,7 +200,7 @@ abstract contract PermissionlessWithdrawals is
             _transferAsset(asset, vault, assetsToTransfer);
         }
 
-        // Step 5: Redeem full shares amount
+        // Step 5: Redeem full shares amount into this contract
 
         uint256 fullAmount = IERC4626Like(vault).redeem(shares, address(this), msg.sender);
 

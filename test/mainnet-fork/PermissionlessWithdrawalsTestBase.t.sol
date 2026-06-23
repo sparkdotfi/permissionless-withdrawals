@@ -430,6 +430,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         // No venue withdrawal is needed, since the proxy covers the full amount.
         _expectWithdrawAaveCall(SparkLend.WETH_SPTOKEN, assets, 0);
         _expectWithdrawERC4626Call(SparkLend.WETH_SPTOKEN, assets, 0);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
         _expectSwapUSDSToUSDCCall(assets, 0);
         _expectTransferAssetCall(address(WETH), address(spETHVault), assets, 1);
         vm.expectCall(address(spETHVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
@@ -489,6 +490,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         // No venue withdrawal is needed, since the proxy covers the full amount.
         _expectWithdrawAaveCall(Ethereum.PSM, assets, 0);
         _expectWithdrawERC4626Call(Ethereum.PSM, assets, 0);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
         _expectSwapUSDSToUSDCCall(assets, 0);
         _expectTransferAssetCall(address(USDC), address(spUSDCVault), assets, 1);
         vm.expectCall(address(spUSDCVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
@@ -547,6 +549,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         // No venue withdrawal is needed, since the proxy covers the full amount.
         _expectWithdrawAaveCall(SparkLend.USDT_SPTOKEN, assets, 0);
         _expectWithdrawERC4626Call(SparkLend.USDT_SPTOKEN, assets, 0);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
         _expectSwapUSDSToUSDCCall(assets, 0);
         _expectTransferAssetCall(address(USDT), address(spUSDTVault), assets, 1);
         vm.expectCall(address(spUSDTVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
@@ -609,6 +612,9 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // The full amount is withdrawn from the Aave venue and transferred to the vault.
         _expectWithdrawAaveCall(SparkLend.WETH_SPTOKEN, assets, 1);
+        _expectWithdrawERC4626Call(SparkLend.WETH_SPTOKEN, assets, 0);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
+        _expectSwapUSDSToUSDCCall(assets, 0);
         _expectTransferAssetCall(address(WETH), address(spETHVault), assets, 1);
         vm.expectCall(address(spETHVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -666,6 +672,9 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // The full amount is withdrawn from the Aave venue and transferred to the vault.
         _expectWithdrawAaveCall(SparkLend.USDT_SPTOKEN, assets, 1);
+        _expectWithdrawERC4626Call(SparkLend.USDT_SPTOKEN, assets, 0);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
+        _expectSwapUSDSToUSDCCall(assets, 0);
         _expectTransferAssetCall(address(USDT), address(spUSDTVault), assets, 1);
         vm.expectCall(address(spUSDTVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -730,7 +739,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         );
 
         // The full amount is withdrawn from the ERC4626 venue and transferred to the vault.
+        _expectWithdrawAaveCall(Ethereum.PSM, assets, 0);
         _expectWithdrawERC4626Call(Ethereum.MORPHO_VAULT_USDC_BC, assets, 1);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
+        _expectSwapUSDSToUSDCCall(assets, 0);
         _expectTransferAssetCall(address(USDC), address(spUSDCVault), assets, 1);
         vm.expectCall(address(spUSDCVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -791,7 +803,9 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         );
 
         // The full amount is sourced via the PSM (mint USDS, swap to USDC) and transferred to the vault.
-        _expectMintUSDSCall(assets * 1e12, 1);
+        _expectWithdrawAaveCall(Ethereum.PSM, assets, 0);
+        _expectWithdrawERC4626Call(Ethereum.PSM, assets, 0);
+        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 1);
         _expectSwapUSDSToUSDCCall(assets, 1);
         _expectTransferAssetCall(address(USDC), address(spUSDCVault), assets, 1);
         vm.expectCall(address(spUSDCVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
@@ -860,6 +874,9 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
         _expectWithdrawAaveCall(SparkLend.WETH_SPTOKEN, assetsToWithdraw, 1);
+        _expectWithdrawERC4626Call(SparkLend.WETH_SPTOKEN, assetsToWithdraw, 0);
+        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 0);
+        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 0);
         _expectTransferAssetCall(address(WETH), address(spETHVault), assetsToTransfer, 1);
         vm.expectCall(address(spETHVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -923,6 +940,9 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
         _expectWithdrawAaveCall(SparkLend.USDT_SPTOKEN, assetsToWithdraw, 1);
+        _expectWithdrawERC4626Call(SparkLend.USDT_SPTOKEN, assetsToWithdraw, 0);
+        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 0);
+        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 0);
         _expectTransferAssetCall(address(USDT), address(spUSDTVault), assetsToTransfer, 1);
         vm.expectCall(address(spUSDTVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -993,7 +1013,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         );
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
+        _expectWithdrawAaveCall(Ethereum.PSM, assetsToWithdraw, 0);
         _expectWithdrawERC4626Call(Ethereum.MORPHO_VAULT_USDC_BC, assetsToWithdraw, 1);
+        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 0);
+        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 0);
         _expectTransferAssetCall(address(USDC), address(spUSDCVault), assetsToTransfer, 1);
         vm.expectCall(address(spUSDCVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1060,7 +1083,9 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         );
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
-        _expectMintUSDSCall(assetsToWithdraw * 1e12, 1);
+        _expectWithdrawAaveCall(Ethereum.PSM, assetsToWithdraw, 0);
+        _expectWithdrawERC4626Call(Ethereum.PSM, assetsToWithdraw, 0);
+        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 1);
         _expectSwapUSDSToUSDCCall(assetsToWithdraw, 1);
         _expectTransferAssetCall(address(USDC), address(spUSDCVault), assetsToTransfer, 1);
         vm.expectCall(address(spUSDCVault), abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
@@ -1120,7 +1145,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         // Each venue supplies exactly one withdrawal in full.
         _expectWithdrawERC4626Call(Ethereum.MORPHO_VAULT_USDC_BC, assetsEach, 1);
         _expectWithdrawAaveCall(SparkLend.USDC_SPTOKEN, assetsEach, 1);
-        _expectMintUSDSCall(assetsEach * 1e12, 1);
+        _expectMintUSDSCall(assetsEach * USDS_CONVERSION_PRECISION, 1);
         _expectSwapUSDSToUSDCCall(assetsEach, 1);
         _expectTransferAssetCall(address(USDC), address(spUSDCVault), assetsEach, 3);
         vm.expectCall(address(spUSDCVault), abi.encodeCall(ISparkVaultLike.redeem, (sharesEach, address(withdrawals), user)), 3);

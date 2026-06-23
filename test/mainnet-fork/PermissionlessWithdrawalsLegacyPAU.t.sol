@@ -48,7 +48,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
         return Ethereum.ALM_CONTROLLER;
     }
 
-    function _proxy() internal override returns (address) {
+    function _proxy() internal view override returns (address) {
         return IMainnetControllerLike(controller).proxy();
     }
 

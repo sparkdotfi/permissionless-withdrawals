@@ -31,7 +31,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     error VaultNotWhitelisted();
     error VenueTypeNotSet();
     error ZeroAdminAddress();
-    error ZeroMainnetControllerAddress();
+    error ZeroControllerAddress();
     error ZeroPenaltyAmount();
     error ZeroPenaltyRecipientAddress();
     error ZeroRecipientAddress();
@@ -74,6 +74,14 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
         VenueType       venueType
     );
 
+    /**
+     *  @dev   Emitted when the admin sets the penalty recipient.
+     *  @param penaltyRecipient The address of the penalty recipient.
+     */
+    event PenaltyRecipientSet(
+        address indexed penaltyRecipient
+    );
+
     /**********************************************************************************************/
     /*** Admin functions                                                                        ***/
     /**********************************************************************************************/
@@ -104,6 +112,13 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
         VenueType venueType
     ) external;
 
+    /**
+     *  @dev   Sets the penalty recipient.
+     *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
+     *  @param penaltyRecipient The address of the penalty recipient.
+     */
+    function setPenaltyRecipient(address penaltyRecipient) external;
+
     /**********************************************************************************************/
     /*** External functions                                                                     ***/
     /**********************************************************************************************/
@@ -118,6 +133,8 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
     /*** View/Pure functions                                                                    ***/
     /**********************************************************************************************/
+
+    function controller() external view returns (address);
 
     function getImplementation() external view returns (address);
 
@@ -135,6 +152,6 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
         view
         returns (VenueType venueType);
 
-    function version() external pure returns (string memory);
+    function VERSION() external pure returns (string memory);
 
 }

@@ -22,30 +22,30 @@ interface IMainnetControllerLegacy {
 contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
 
     function _proxy() internal view override returns (address) {
-        return IMainnetControllerLegacy(mainnetController).proxy();
+        return IMainnetControllerLegacy(controller).proxy();
     }
 
     function _transferAsset(address asset, address destination, uint256 amount)
         internal
         override
     {
-        IMainnetControllerLegacy(mainnetController).transferAsset(asset, destination, amount);
+        IMainnetControllerLegacy(controller).transferAsset(asset, destination, amount);
     }
 
     function _withdrawAave(address aToken, uint256 amount) internal override {
-        IMainnetControllerLegacy(mainnetController).withdrawAave(aToken, amount);
+        IMainnetControllerLegacy(controller).withdrawAave(aToken, amount);
     }
 
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal override {
-        IMainnetControllerLegacy(mainnetController).withdrawERC4626(token, amount, maxSharesIn);
+        IMainnetControllerLegacy(controller).withdrawERC4626(token, amount, maxSharesIn);
     }
 
     function _mintUSDS(uint256 usdsAmount) internal override {
-        IMainnetControllerLegacy(mainnetController).mintUSDS(usdsAmount);
+        IMainnetControllerLegacy(controller).mintUSDS(usdsAmount);
     }
 
     function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        IMainnetControllerLegacy(mainnetController).swapUSDSToUSDC(usdcAmount);
+        IMainnetControllerLegacy(controller).swapUSDSToUSDC(usdcAmount);
     }
 
 }

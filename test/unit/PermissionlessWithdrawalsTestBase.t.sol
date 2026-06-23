@@ -39,6 +39,11 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
     /*** initialize                                                                             ***/
     /**********************************************************************************************/
 
+    function test_initialize_alreadyInitialized() external {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        withdrawals.initialize(admin, address(controller), penaltyRecipient);
+    }
+
     function test_initialize_zeroAdminAddress() external {
         PermissionlessWithdrawals implementation = _deployImplementation();
 
@@ -48,10 +53,10 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
         ));
     }
 
-    function test_initialize_zeroMainnetControllerAddress() external {
+    function test_initialize_zeroControllerAddress() external {
         PermissionlessWithdrawals implementation = _deployImplementation();
 
-        vm.expectRevert(IPermissionlessWithdrawals.ZeroMainnetControllerAddress.selector);
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroControllerAddress.selector);
         new ERC1967Proxy(address(implementation), abi.encodeCall(
             PermissionlessWithdrawals.initialize, (admin, address(0), address(0))
         ));
@@ -66,11 +71,6 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
         ));
     }
 
-    function test_initialize_alreadyInitialized() external {
-        vm.expectRevert(Initializable.InvalidInitialization.selector);
-        withdrawals.initialize(admin, address(controller), penaltyRecipient);
-    }
-
     function test_initialize() external {
         PermissionlessWithdrawals newWithdrawals = _deployWithdrawals(
             admin,
@@ -81,8 +81,8 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
         assertEq(newWithdrawals.hasRole(newWithdrawals.DEFAULT_ADMIN_ROLE(), admin),     true);
         assertEq(newWithdrawals.getRoleMemberCount(newWithdrawals.DEFAULT_ADMIN_ROLE()), 1);
 
-        assertEq(newWithdrawals.mainnetController(), address(controller));
-        assertEq(newWithdrawals.penaltyRecipient(),  penaltyRecipient);
+        assertEq(newWithdrawals.controller(),       address(controller));
+        assertEq(newWithdrawals.penaltyRecipient(), penaltyRecipient);
     }
 
     /**********************************************************************************************/
@@ -104,10 +104,15 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
     }
 
     function test_upgrade() external {
-        address controllerBefore       = withdrawals.mainnetController();
+        address controllerBefore       = withdrawals.controller();
         address penaltyRecipientBefore = withdrawals.penaltyRecipient();
 
         ( bool whitelistedBefore, uint256 penaltyBefore ) = withdrawals.vaultConfig(address(vault));
+
+        assertEq(controllerBefore,       address(controller));
+        assertEq(penaltyRecipientBefore, penaltyRecipient);
+        assertEq(whitelistedBefore,      true);
+        assertEq(penaltyBefore,          PENALTY_AMOUNT);
 
         PermissionlessWithdrawalsV2Mock newImplementation = new PermissionlessWithdrawalsV2Mock();
 
@@ -121,8 +126,8 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
         assertEq(PermissionlessWithdrawalsV2Mock(address(withdrawals)).isV2(), true);
 
         // Storage is preserved across the upgrade.
-        assertEq(withdrawals.mainnetController(), controllerBefore);
-        assertEq(withdrawals.penaltyRecipient(),  penaltyRecipientBefore);
+        assertEq(withdrawals.controller(),       controllerBefore);
+        assertEq(withdrawals.penaltyRecipient(), penaltyRecipientBefore);
 
         ( bool whitelistedAfter, uint256 penaltyAfter ) = withdrawals.vaultConfig(address(vault));
 
@@ -285,6 +290,48 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
             uint256(withdrawals.venueTypes(address(vault), newVenue)),
             uint256(IPermissionlessWithdrawals.VenueType.NONE)
         );
+    }
+
+    /**********************************************************************************************/
+    /*** setPenaltyRecipient                                                                    ***/
+    /**********************************************************************************************/
+
+    function test_setPenaltyRecipient_reentrancy() external {
+        _setWithdrawalsEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        withdrawals.setPenaltyRecipient(penaltyRecipient);
+    }
+
+    function test_setPenaltyRecipient_unauthorized() external {
+        address unauthorized = makeAddr("unauthorized");
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        withdrawals.setPenaltyRecipient(penaltyRecipient);
+    }
+
+    function test_setPenaltyRecipient_zeroPenaltyRecipientAddress() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroPenaltyRecipientAddress.selector);
+        vm.prank(admin);
+        withdrawals.setPenaltyRecipient(address(0));
+    }
+
+    function test_setPenaltyRecipient() external {
+        address newPenaltyRecipient = makeAddr("newPenaltyRecipient");
+
+        assertEq(withdrawals.penaltyRecipient(), penaltyRecipient);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.PenaltyRecipientSet(newPenaltyRecipient);
+
+        vm.prank(admin);
+        withdrawals.setPenaltyRecipient(newPenaltyRecipient);
+
+        assertEq(withdrawals.penaltyRecipient(), newPenaltyRecipient);
     }
 
     /**********************************************************************************************/
