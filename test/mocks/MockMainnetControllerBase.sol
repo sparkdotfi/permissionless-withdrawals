@@ -9,11 +9,8 @@ import { MockERC20 }    from "./MockERC20.sol";
 import { MockERC4626 }  from "./MockERC4626.sol";
 import { MockPSM }      from "./MockPSM.sol";
 
-// Minimal MainnetController that custodies nothing: all funds live in the ALMProxy and every
-// venue interaction and transfer is executed by the proxy via `doCall`, mirroring production.
-// `setVenueDelivery` overrides how much the next venue withdrawal delivers to the proxy, to
-// simulate a venue returning more or less than requested.
-contract MockMainnetController {
+// Shared MainnetController behaviour for both the legacy and diamond (PAU) controller versions.
+abstract contract MockMainnetControllerBase {
 
     MockALMProxy public almProxy;
     MockERC20    public usds;
@@ -39,16 +36,20 @@ contract MockMainnetController {
         deliveryAmount     = amount;
     }
 
-    function transferAsset(address asset, address destination, uint256 amount) external {
+    /**********************************************************************************************/
+    /*** Shared controller interaction logic                                                    ***/
+    /**********************************************************************************************/
+
+    function _transferAsset(address asset, address destination, uint256 amount) internal {
         almProxy.doCall(asset, abi.encodeCall(IERC20.transfer, (destination, amount)));
     }
 
-    function withdrawAave(address aToken, uint256 amount) external returns (uint256 delivered) {
+    function _withdrawAave(address aToken, uint256 amount) internal returns (uint256 delivered) {
         delivered = _delivered(amount);
         almProxy.doCall(aToken, abi.encodeCall(MockAToken.release, (address(almProxy), delivered)));
     }
 
-    function withdrawERC4626(address token, uint256 amount, uint256) external returns (uint256 delivered) {
+    function _withdrawERC4626(address token, uint256 amount) internal returns (uint256 delivered) {
         delivered = _delivered(amount);
         almProxy.doCall(
             token,
@@ -56,11 +57,11 @@ contract MockMainnetController {
         );
     }
 
-    function mintUSDS(uint256 usdsAmount) external {
+    function _mintUSDS(uint256 usdsAmount) internal {
         almProxy.doCall(address(usds), abi.encodeCall(MockERC20.mint, (address(almProxy), usdsAmount)));
     }
 
-    function swapUSDSToUSDC(uint256 usdcAmount) external {
+    function _swapUSDSToUSDC(uint256 usdcAmount) internal {
         // Send the minted USDS to the PSM and receive the gem (USDC), executed by the proxy.
         almProxy.doCall(address(usds), abi.encodeCall(IERC20.transfer, (psm, usdcAmount * 1e12)));
         almProxy.doCall(psm,           abi.encodeCall(MockPSM.release, (address(almProxy), _delivered(usdcAmount))));

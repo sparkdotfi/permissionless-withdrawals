@@ -3,38 +3,76 @@ pragma solidity ^0.8.34;
 
 import { IAccessControl }  from "../../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import { ERC1967Proxy }    from "../../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+import { Initializable }   from "../../lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "../../lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
 import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.sol";
 
-import { MockERC4626 }           from "../mocks/MockERC4626.sol";
-import { MockMainnetController } from "../mocks/MockMainnetController.sol";
+import { MockERC4626 }                      from "../mocks/MockERC4626.sol";
+import { PermissionlessWithdrawalsV2Mock }  from "../mocks/PermissionlessWithdrawalsV2Mock.sol";
 
 import { UnitTestBase } from "./UnitTestBase.t.sol";
 
-contract PermissionlessWithdrawalsTest is UnitTestBase {
+// Abstract scenario suite shared by both controller versions.
+abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
 
     /**********************************************************************************************/
-    /*** constructor                                                                            ***/
+    /*** Controller-specific call expectation hooks                                             ***/
     /**********************************************************************************************/
 
-    function test_constructor_zeroAdminAddress() external {
+    function _expectWithdrawAaveCall(address aToken, uint256 amount, uint64 count) internal virtual;
+
+    function _expectWithdrawERC4626Call(address token, uint256 amount, uint64 count) internal virtual;
+
+    function _expectMintUSDSCall(uint256 usdsAmount, uint64 count) internal virtual;
+
+    function _expectSwapUSDSToUSDCCall(uint256 usdcAmount, uint64 count) internal virtual;
+
+    function _expectTransferAssetCall(address asset_, address destination, uint256 amount, uint64 count)
+        internal
+        virtual;
+
+    /**********************************************************************************************/
+    /*** initialize                                                                             ***/
+    /**********************************************************************************************/
+
+    function test_initialize_zeroAdminAddress() external {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
         vm.expectRevert(IPermissionlessWithdrawals.ZeroAdminAddress.selector);
-        new PermissionlessWithdrawals(address(0), address(0), address(0));
+        new ERC1967Proxy(address(implementation), abi.encodeCall(
+            PermissionlessWithdrawals.initialize, (address(0), address(0), address(0))
+        ));
     }
 
-    function test_constructor_zeroMainnetControllerAddress() external {
+    function test_initialize_zeroMainnetControllerAddress() external {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
         vm.expectRevert(IPermissionlessWithdrawals.ZeroMainnetControllerAddress.selector);
-        new PermissionlessWithdrawals(admin, address(0), address(0));
+        new ERC1967Proxy(address(implementation), abi.encodeCall(
+            PermissionlessWithdrawals.initialize, (admin, address(0), address(0))
+        ));
     }
 
-    function test_constructor_zeroPenaltyRecipientAddress() external {
+    function test_initialize_zeroPenaltyRecipientAddress() external {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
         vm.expectRevert(IPermissionlessWithdrawals.ZeroPenaltyRecipientAddress.selector);
-        new PermissionlessWithdrawals(admin, address(controller), address(0));
+        new ERC1967Proxy(address(implementation), abi.encodeCall(
+            PermissionlessWithdrawals.initialize, (admin, address(controller), address(0))
+        ));
     }
 
-    function test_constructor() external {
-        PermissionlessWithdrawals newWithdrawals = new PermissionlessWithdrawals(
+    function test_initialize_alreadyInitialized() external {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        withdrawals.initialize(admin, address(controller), penaltyRecipient);
+    }
+
+    function test_initialize() external {
+        PermissionlessWithdrawals newWithdrawals = _deployWithdrawals(
             admin,
             address(controller),
             penaltyRecipient
@@ -43,8 +81,53 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         assertEq(newWithdrawals.hasRole(newWithdrawals.DEFAULT_ADMIN_ROLE(), admin),     true);
         assertEq(newWithdrawals.getRoleMemberCount(newWithdrawals.DEFAULT_ADMIN_ROLE()), 1);
 
-        assertEq(address(newWithdrawals.mainnetController()), address(controller));
-        assertEq(newWithdrawals.penaltyRecipient(),           penaltyRecipient);
+        assertEq(newWithdrawals.mainnetController(), address(controller));
+        assertEq(newWithdrawals.penaltyRecipient(),  penaltyRecipient);
+    }
+
+    /**********************************************************************************************/
+    /*** _authorizeUpgrade                                                                      ***/
+    /**********************************************************************************************/
+
+    function test_upgrade_unauthorized() external {
+        address unauthorized = makeAddr("unauthorized");
+
+        PermissionlessWithdrawalsV2Mock newImplementation = new PermissionlessWithdrawalsV2Mock();
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        UUPSUpgradeable(address(withdrawals)).upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_upgrade() external {
+        address controllerBefore       = withdrawals.mainnetController();
+        address penaltyRecipientBefore = withdrawals.penaltyRecipient();
+
+        ( bool whitelistedBefore, uint256 penaltyBefore ) = withdrawals.vaultConfig(address(vault));
+
+        PermissionlessWithdrawalsV2Mock newImplementation = new PermissionlessWithdrawalsV2Mock();
+
+        vm.prank(admin);
+        UUPSUpgradeable(address(withdrawals)).upgradeToAndCall(address(newImplementation), "");
+
+        // The implementation pointer is updated to the new implementation.
+        assertEq(withdrawals.getImplementation(), address(newImplementation));
+
+        // The new implementation's logic is live.
+        assertEq(PermissionlessWithdrawalsV2Mock(address(withdrawals)).isV2(), true);
+
+        // Storage is preserved across the upgrade.
+        assertEq(withdrawals.mainnetController(), controllerBefore);
+        assertEq(withdrawals.penaltyRecipient(),  penaltyRecipientBefore);
+
+        ( bool whitelistedAfter, uint256 penaltyAfter ) = withdrawals.vaultConfig(address(vault));
+
+        assertEq(whitelistedAfter, whitelistedBefore);
+        assertEq(penaltyAfter,     penaltyBefore);
     }
 
     /**********************************************************************************************/
@@ -72,7 +155,7 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
     function test_updateVaultConfig_zeroVaultAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
         vm.prank(admin);
-        withdrawals.updateVaultConfig(address(0), PENALTY_AMOUNT, true);
+        withdrawals.updateVaultConfig(address(0), 0, true);
     }
 
     function test_updateVaultConfig_zeroPenaltyAmount() external {
@@ -119,7 +202,7 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
     function test_updateVenueConfig_reentrancy() external {
         _setWithdrawalsEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        withdrawals.updateVenueConfig(address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.updateVenueConfig(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, true);
     }
 
     function test_updateVenueConfig_unauthorized() external {
@@ -131,57 +214,65 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             DEFAULT_ADMIN_ROLE
         ));
         vm.prank(unauthorized);
-        withdrawals.updateVenueConfig(address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.updateVenueConfig(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, true);
+    }
+
+    function test_updateVenueConfig_zeroVaultAddress() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
+        vm.prank(admin);
+        withdrawals.updateVenueConfig(address(0), address(0), IPermissionlessWithdrawals.VenueType.AAVE, true);
     }
 
     function test_updateVenueConfig_zeroVenueAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVenueAddress.selector);
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(0), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.updateVenueConfig(address(vault), address(0), IPermissionlessWithdrawals.VenueType.AAVE, true);
     }
 
     function test_updateVenueConfig() external {
         address newVenue = makeAddr("newVenue");
 
         ( bool whitelisted, IPermissionlessWithdrawals.VenueType venueType )
-            = withdrawals.venueConfig(newVenue);
+            = withdrawals.venueConfig(address(vault), newVenue);
 
         assertEq(whitelisted,        false);
         assertEq(uint256(venueType), uint256(IPermissionlessWithdrawals.VenueType.AAVE));
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VenueConfigUpdated(
+            address(vault),
             newVenue,
             IPermissionlessWithdrawals.VenueType.PSM,
             true
         );
 
         vm.prank(admin);
-        withdrawals.updateVenueConfig(newVenue, IPermissionlessWithdrawals.VenueType.PSM, true);
+        withdrawals.updateVenueConfig(address(vault), newVenue, IPermissionlessWithdrawals.VenueType.PSM, true);
 
-        ( whitelisted, venueType ) = withdrawals.venueConfig(newVenue);
+        ( whitelisted, venueType ) = withdrawals.venueConfig(address(vault), newVenue);
 
         assertEq(whitelisted,        true);
         assertEq(uint256(venueType), uint256(IPermissionlessWithdrawals.VenueType.PSM));
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VenueConfigUpdated(
+            address(vault),
             newVenue,
             IPermissionlessWithdrawals.VenueType.ERC4626,
             false
         );
 
         vm.prank(admin);
-        withdrawals.updateVenueConfig(newVenue, IPermissionlessWithdrawals.VenueType.ERC4626, false);
+        withdrawals.updateVenueConfig(address(vault), newVenue, IPermissionlessWithdrawals.VenueType.ERC4626, false);
 
-        ( whitelisted, venueType ) = withdrawals.venueConfig(newVenue);
+        ( whitelisted, venueType ) = withdrawals.venueConfig(address(vault), newVenue);
 
         assertEq(whitelisted,        false);
         assertEq(uint256(venueType), uint256(IPermissionlessWithdrawals.VenueType.ERC4626));
     }
 
     /**********************************************************************************************/
-    /*** permissionlessWithdraw                                                                 ***/
+    /*** permissionlessWithdraw: validation                                                     ***/
     /**********************************************************************************************/
 
     function test_permissionlessWithdraw_reentrancy() external {
@@ -217,7 +308,7 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         // A previously whitelisted venue that has been de-whitelisted also reverts.
 
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, false);
+        withdrawals.updateVenueConfig(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, false);
 
         vm.expectRevert(IPermissionlessWithdrawals.VenueNotWhitelisted.selector);
         vm.prank(user);
@@ -228,6 +319,48 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroRecipientAddress.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(vault), address(aToken), address(0), USER_SHARES);
+    }
+
+    function test_permissionlessWithdraw_incorrectVenue_aave() external {
+        // The Aave venue reports a different underlying than the vault asset.
+        address otherAsset = makeAddr("otherAsset");
+        vm.mockCall(
+            address(aToken),
+            abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"),
+            abi.encode(otherAsset)
+        );
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(vault), address(aToken), recipient, USER_SHARES);
+    }
+
+    function test_permissionlessWithdraw_incorrectVenue_erc4626() external {
+        // The ERC4626 venue reports a different asset than the vault asset.
+        address otherAsset = makeAddr("otherAsset");
+        vm.mockCall(
+            address(erc4626Venue),
+            abi.encodeWithSignature("asset()"),
+            abi.encode(otherAsset)
+        );
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(vault), address(erc4626Venue), recipient, USER_SHARES);
+    }
+
+    function test_permissionlessWithdraw_incorrectVenue_psm() external {
+        // The PSM venue reports a different gem than the vault asset.
+        address otherAsset = makeAddr("otherAsset");
+        vm.mockCall(
+            address(psmVenue),
+            abi.encodeWithSignature("gem()"),
+            abi.encode(otherAsset)
+        );
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(vault), address(psmVenue), recipient, USER_SHARES);
     }
 
     function test_permissionlessWithdraw_insufficientVenueLiquidityBoundary() external {
@@ -264,6 +397,10 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
         withdrawals.permissionlessWithdraw(address(vault), address(aToken), recipient, PENALTY_AMOUNT);
     }
 
+    /**********************************************************************************************/
+    /*** permissionlessWithdraw: venue flows                                                    ***/
+    /**********************************************************************************************/
+
     function test_permissionlessWithdraw_aave() external {
         uint256 shares          = USER_SHARES;
         uint256 assetsRequested = vault.convertToAssets(shares);
@@ -280,9 +417,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)));
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset, (address(asset), address(vault), assetsRequested)));
-        vm.expectCall(address(vault),      abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
+        _expectWithdrawAaveCall(address(aToken), assetsRequested,                  1);
+        _expectTransferAssetCall(address(asset), address(vault),  assetsRequested, 1);
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PermissionlessWithdraw(
@@ -328,9 +465,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawERC4626, (address(erc4626Venue), assetsRequested, type(uint256).max)));
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset,   (address(asset), address(vault), assetsRequested)));
-        vm.expectCall(address(vault),      abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
+        _expectWithdrawERC4626Call(address(erc4626Venue), assetsRequested,                  1);
+        _expectTransferAssetCall(address(asset),          address(vault),  assetsRequested, 1);
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PermissionlessWithdraw(
@@ -376,9 +513,10 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.mintUSDS,       (assetsRequested * withdrawals.USDS_CONVERSION_PRECISION())));
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.swapUSDSToUSDC, (assetsRequested)));
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset,  (address(asset), address(vault), assetsRequested)));
+        _expectMintUSDSCall(assetsRequested * withdrawals.USDS_CONVERSION_PRECISION(), 1);
+        _expectSwapUSDSToUSDCCall(assetsRequested, 1);
+        _expectTransferAssetCall(address(asset), address(vault), assetsRequested, 1);
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PermissionlessWithdraw(
@@ -427,9 +565,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)), 0); // No withdrawal needed.
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset, (address(asset), address(vault), assetsRequested)));
-        vm.expectCall(address(vault),      abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
+        _expectWithdrawAaveCall(address(aToken), assetsRequested,                  0); // No withdrawal needed.
+        _expectTransferAssetCall(address(asset), address(vault),  assetsRequested, 1);
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.record();
 
@@ -469,9 +607,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)), 0); // No withdrawal needed.
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset, (address(asset), address(vault), assetsRequested)), 0); // No transfer needed.
-        vm.expectCall(address(vault),      abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
+        _expectWithdrawAaveCall(address(aToken), assetsRequested,                  0); // No withdrawal needed.
+        _expectTransferAssetCall(address(asset), address(vault),  assetsRequested, 0); // No transfer needed.
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.record();
 
@@ -517,9 +655,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsToWithdraw)));
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset, (address(asset), address(vault), assetsToTransfer)));
-        vm.expectCall(address(vault),      abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
+        _expectWithdrawAaveCall(address(aToken), assetsToWithdraw,                   1);
+        _expectTransferAssetCall(address(asset), address(vault),   assetsToTransfer, 1);
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.record();
 
@@ -560,9 +698,9 @@ contract PermissionlessWithdrawalsTest is UnitTestBase {
             venueAssets            : VENUE_LIQUIDITY
         });
 
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.withdrawAave,  (address(aToken), assetsRequested)));
-        vm.expectCall(address(controller), abi.encodeCall(MockMainnetController.transferAsset, (address(asset), address(vault), assetsRequested)));
-        vm.expectCall(address(vault),      abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
+        _expectWithdrawAaveCall(address(aToken), assetsRequested,                  1);
+        _expectTransferAssetCall(address(asset), address(vault),  assetsRequested, 1);
+        vm.expectCall(address(vault), abi.encodeCall(MockERC4626.redeem, (shares, address(withdrawals), user)));
 
         vm.record();
 

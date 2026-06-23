@@ -3,17 +3,19 @@ pragma solidity ^0.8.34;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
+import { ERC1967Proxy } from "../../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
 import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.sol";
 
-import { MockALMProxy }          from "../mocks/MockALMProxy.sol";
-import { MockAToken }            from "../mocks/MockAToken.sol";
-import { MockERC20 }             from "../mocks/MockERC20.sol";
-import { MockERC4626 }           from "../mocks/MockERC4626.sol";
-import { MockMainnetController } from "../mocks/MockMainnetController.sol";
-import { MockPSM }               from "../mocks/MockPSM.sol";
+import { MockALMProxy }              from "../mocks/MockALMProxy.sol";
+import { MockAToken }                from "../mocks/MockAToken.sol";
+import { MockERC20 }                 from "../mocks/MockERC20.sol";
+import { MockERC4626 }               from "../mocks/MockERC4626.sol";
+import { MockMainnetControllerBase } from "../mocks/MockMainnetControllerBase.sol";
+import { MockPSM }                   from "../mocks/MockPSM.sol";
 
-contract UnitTestBase is Test {
+abstract contract UnitTestBase is Test {
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant _REENTRANCY_GUARD_SLOT        = 0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00;
@@ -31,13 +33,13 @@ contract UnitTestBase is Test {
     address internal recipient        = makeAddr("recipient");
     address internal user             = makeAddr("user");
 
-    MockERC20             internal asset;
-    MockERC4626           internal vault;
-    MockAToken            internal aToken;
-    MockERC4626           internal erc4626Venue;
-    MockPSM               internal psmVenue;
-    MockMainnetController internal controller;
-    MockALMProxy          internal almProxy;
+    MockERC20                 internal asset;
+    MockERC4626               internal vault;
+    MockAToken                internal aToken;
+    MockERC4626               internal erc4626Venue;
+    MockPSM                   internal psmVenue;
+    MockMainnetControllerBase internal controller;
+    MockALMProxy              internal almProxy;
 
     PermissionlessWithdrawals internal withdrawals;
 
@@ -47,18 +49,19 @@ contract UnitTestBase is Test {
         aToken       = new MockAToken(address(asset));
         erc4626Venue = new MockERC4626(address(asset));
         psmVenue     = new MockPSM(address(asset));
-        controller   = new MockMainnetController(address(psmVenue));
+        controller   = _deployController(address(psmVenue));
         almProxy     = controller.almProxy();
 
-        withdrawals = new PermissionlessWithdrawals(admin, address(controller), penaltyRecipient);
+        withdrawals = _deployWithdrawals(admin, address(controller), penaltyRecipient);
 
         // Configure the withdrawals contract.
 
         vm.startPrank(admin);
-        withdrawals.updateVaultConfig(address(vault),        PENALTY_AMOUNT,                               true);
-        withdrawals.updateVenueConfig(address(aToken),       IPermissionlessWithdrawals.VenueType.AAVE,    true);
-        withdrawals.updateVenueConfig(address(erc4626Venue), IPermissionlessWithdrawals.VenueType.ERC4626, true);
-        withdrawals.updateVenueConfig(address(psmVenue),     IPermissionlessWithdrawals.VenueType.PSM,     true);
+        withdrawals.updateVaultConfig(address(vault), PENALTY_AMOUNT, true);
+
+        withdrawals.updateVenueConfig(address(vault), address(aToken),       IPermissionlessWithdrawals.VenueType.AAVE,    true);
+        withdrawals.updateVenueConfig(address(vault), address(erc4626Venue), IPermissionlessWithdrawals.VenueType.ERC4626, true);
+        withdrawals.updateVenueConfig(address(vault), address(psmVenue),     IPermissionlessWithdrawals.VenueType.PSM,     true);
         vm.stopPrank();
 
         vault.mint(user, USER_SHARES);
@@ -70,6 +73,31 @@ contract UnitTestBase is Test {
         asset.mint(address(aToken),       VENUE_LIQUIDITY);
         asset.mint(address(erc4626Venue), VENUE_LIQUIDITY);
         asset.mint(address(psmVenue),     VENUE_LIQUIDITY);
+    }
+
+    /**********************************************************************************************/
+    /*** Controller-specific deploy hooks                                                       ***/
+    /**********************************************************************************************/
+
+    // Deploys a fresh implementation of the concrete withdrawals contract under test.
+    function _deployImplementation() internal virtual returns (PermissionlessWithdrawals);
+
+    // Deploys the mock controller for the version under test.
+    function _deployController(address psm) internal virtual returns (MockMainnetControllerBase);
+
+    // Deploys the implementation behind an ERC1967 proxy and initializes it.
+    function _deployWithdrawals(address admin_, address controller_, address penaltyRecipient_)
+        internal
+        returns (PermissionlessWithdrawals)
+    {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
+        bytes memory initData = abi.encodeCall(
+            PermissionlessWithdrawals.initialize,
+            (admin_, controller_, penaltyRecipient_)
+        );
+
+        return PermissionlessWithdrawals(address(new ERC1967Proxy(address(implementation), initData)));
     }
 
     /**********************************************************************************************/
