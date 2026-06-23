@@ -36,31 +36,13 @@ interface IERC4626Like {
 
 }
 
-interface IMainnetControllerLike {
-
-    function mintUSDS(uint256 usdsAmount) external;
-
-    function proxy() external view returns (address proxy);
-
-    function swapUSDSToUSDC(uint256 usdcAmount) external;
-
-    function transferAsset(address asset, address destination, uint256 amount) external;
-
-    function withdrawAave(address aToken, uint256 amount) external returns (uint256);
-
-    function withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
-        external
-        returns (uint256 shares);
-
-}
-
 interface PSMLike {
 
     function gem() external view returns (address);
 
 }
 
-contract PermissionlessWithdrawals is
+abstract contract PermissionlessWithdrawals is
     IPermissionlessWithdrawals,
     AccessControlEnumerableUpgradeable,
     UUPSUpgradeable,
@@ -76,8 +58,8 @@ contract PermissionlessWithdrawals is
     string  public constant version                   = "1";
     uint256 public constant USDS_CONVERSION_PRECISION = 1e12;
 
-    IMainnetControllerLike public mainnetController;
-    address                public penaltyRecipient;
+    address public mainnetController;
+    address public penaltyRecipient;
 
     mapping(address vault => VaultConfig config)                           public vaultConfig;
     mapping(address vault => mapping(address venue => VenueConfig config)) public venueConfig;
@@ -100,7 +82,7 @@ contract PermissionlessWithdrawals is
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 
-        mainnetController = IMainnetControllerLike(mainnetController_);
+        mainnetController = mainnetController_;
         penaltyRecipient  = penaltyRecipient_;
     }
 
@@ -182,7 +164,7 @@ contract PermissionlessWithdrawals is
         // Step 2: Calculate additional amount needed for user withdrawal
 
         address asset = IERC4626Like(vault).asset();
-        address proxy = mainnetController.proxy();
+        address proxy = _proxy();
 
         uint256 assetsRequested      = IERC4626Like(vault).convertToAssets(shares);
         uint256 proxyStartingBalance = IERC20(asset).balanceOf(proxy);
@@ -207,7 +189,7 @@ contract PermissionlessWithdrawals is
         // Step 4: Transfer withdrawn assets to the vault if necessary
 
         if (assetsToTransfer > 0) {
-            mainnetController.transferAsset(asset, vault, assetsToTransfer);
+            _transferAsset(asset, vault, assetsToTransfer);
         }
 
         // Step 5: Redeem full shares amount
@@ -252,25 +234,18 @@ contract PermissionlessWithdrawals is
         if (venueConfig_.venueType == VenueType.AAVE) {
             require(IATokenLike(venue).UNDERLYING_ASSET_ADDRESS() == asset, IncorrectVenue());
 
-            mainnetController.withdrawAave({
-                aToken : venue,
-                amount : assetsToWithdraw
-            });
+            _withdrawAave(venue, assetsToWithdraw);
         }
         else if (venueConfig_.venueType == VenueType.ERC4626) {
             require(IERC4626Like(venue).asset() == asset, IncorrectVenue());
 
-            mainnetController.withdrawERC4626({
-                token       : venue,
-                amount      : assetsToWithdraw,
-                maxSharesIn : type(uint256).max // Relying on controller for slippage protection
-            });
+            _withdrawERC4626(venue, assetsToWithdraw, type(uint256).max);
         }
         else if (venueConfig_.venueType == VenueType.PSM) {
             require(PSMLike(venue).gem() == asset, IncorrectVenue());
 
-            mainnetController.mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
-            mainnetController.swapUSDSToUSDC(assetsToWithdraw);
+            _mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
+            _swapUSDSToUSDC(assetsToWithdraw);
         }
 
         uint256 amountWithdrawn 
@@ -281,5 +256,21 @@ contract PermissionlessWithdrawals is
             InsufficientVenueLiquidity(assetsToWithdraw, amountWithdrawn)
         );
     }
+
+    /**********************************************************************************************/
+    /*** MainnetController interaction hooks                                                    ***/
+    /**********************************************************************************************/
+
+    function _proxy() internal view virtual returns (address proxy);
+
+    function _transferAsset(address asset, address destination, uint256 amount) internal virtual;
+
+    function _withdrawAave(address aToken, uint256 amount) internal virtual;
+
+    function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal virtual;
+
+    function _mintUSDS(uint256 usdsAmount) internal virtual;
+
+    function _swapUSDSToUSDC(uint256 usdcAmount) internal virtual;
 
 }
