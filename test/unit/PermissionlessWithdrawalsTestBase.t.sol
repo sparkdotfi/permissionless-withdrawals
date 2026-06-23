@@ -196,16 +196,16 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
     }
 
     /**********************************************************************************************/
-    /*** updateVenueConfig                                                                      ***/
+    /*** setVenueType                                                                           ***/
     /**********************************************************************************************/
 
-    function test_updateVenueConfig_reentrancy() external {
+    function test_setVenueType_reentrancy() external {
         _setWithdrawalsEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        withdrawals.updateVenueConfig(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.setVenueType(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE);
     }
 
-    function test_updateVenueConfig_unauthorized() external {
+    function test_setVenueType_unauthorized() external {
         address unauthorized = makeAddr("unauthorized");
 
         vm.expectRevert(abi.encodeWithSelector(
@@ -214,61 +214,77 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
             DEFAULT_ADMIN_ROLE
         ));
         vm.prank(unauthorized);
-        withdrawals.updateVenueConfig(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.setVenueType(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE);
     }
 
-    function test_updateVenueConfig_zeroVaultAddress() external {
+    function test_setVenueType_zeroVaultAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(0), address(0), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.AAVE);
     }
 
-    function test_updateVenueConfig_zeroVenueAddress() external {
+    function test_setVenueType_zeroVenueAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVenueAddress.selector);
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(vault), address(0), IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.setVenueType(address(vault), address(0), IPermissionlessWithdrawals.VenueType.AAVE);
     }
 
-    function test_updateVenueConfig() external {
+    function test_setVenueType_outOfRangeVenueType() external {
+        bytes memory badCall = abi.encodeWithSelector(
+            IPermissionlessWithdrawals.setVenueType.selector,
+            address(vault),
+            address(aToken),
+            uint8(4)        // Out-of-range VenueType
+        );
+
+        vm.prank(admin);
+        ( bool success, bytes memory returnData ) = address(withdrawals).call(badCall);
+
+        // The ABI decoder rejects the out-of-range enum at the calldata boundary, reverting with
+        // empty data before the function body (and its modifiers) runs.
+        assertEq(success,           false);
+        assertEq(returnData.length, 0);
+    }
+
+    function test_setVenueType() external {
         address newVenue = makeAddr("newVenue");
 
-        ( bool whitelisted, IPermissionlessWithdrawals.VenueType venueType )
-            = withdrawals.venueConfig(address(vault), newVenue);
-
-        assertEq(whitelisted,        false);
-        assertEq(uint256(venueType), uint256(IPermissionlessWithdrawals.VenueType.AAVE));
+        assertEq(
+            uint256(withdrawals.venueTypes(address(vault), newVenue)),
+            uint256(IPermissionlessWithdrawals.VenueType.NONE)
+        );
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueConfigUpdated(
+        emit IPermissionlessWithdrawals.VenueTypeSet(
             address(vault),
             newVenue,
-            IPermissionlessWithdrawals.VenueType.PSM,
-            true
+            IPermissionlessWithdrawals.VenueType.PSM
         );
 
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(vault), newVenue, IPermissionlessWithdrawals.VenueType.PSM, true);
+        withdrawals.setVenueType(address(vault), newVenue, IPermissionlessWithdrawals.VenueType.PSM);
 
-        ( whitelisted, venueType ) = withdrawals.venueConfig(address(vault), newVenue);
+        assertEq(
+            uint256(withdrawals.venueTypes(address(vault), newVenue)),
+            uint256(IPermissionlessWithdrawals.VenueType.PSM)
+        );
 
-        assertEq(whitelisted,        true);
-        assertEq(uint256(venueType), uint256(IPermissionlessWithdrawals.VenueType.PSM));
+        // Resetting the type to NONE disables the venue.
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueConfigUpdated(
+        emit IPermissionlessWithdrawals.VenueTypeSet(
             address(vault),
             newVenue,
-            IPermissionlessWithdrawals.VenueType.ERC4626,
-            false
+            IPermissionlessWithdrawals.VenueType.NONE
         );
 
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(vault), newVenue, IPermissionlessWithdrawals.VenueType.ERC4626, false);
+        withdrawals.setVenueType(address(vault), newVenue, IPermissionlessWithdrawals.VenueType.NONE);
 
-        ( whitelisted, venueType ) = withdrawals.venueConfig(address(vault), newVenue);
-
-        assertEq(whitelisted,        false);
-        assertEq(uint256(venueType), uint256(IPermissionlessWithdrawals.VenueType.ERC4626));
+        assertEq(
+            uint256(withdrawals.venueTypes(address(vault), newVenue)),
+            uint256(IPermissionlessWithdrawals.VenueType.NONE)
+        );
     }
 
     /**********************************************************************************************/
@@ -298,19 +314,19 @@ abstract contract PermissionlessWithdrawalsTestBase is UnitTestBase {
         withdrawals.permissionlessWithdraw(address(vault), address(aToken), recipient, USER_SHARES);
     }
 
-    function test_permissionlessWithdraw_venueNotWhitelisted() external {
+    function test_permissionlessWithdraw_venueTypeNotSet() external {
         address randomVenue = makeAddr("randomVenue");
 
-        vm.expectRevert(IPermissionlessWithdrawals.VenueNotWhitelisted.selector);
+        vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(vault), randomVenue, recipient, USER_SHARES);
 
-        // A previously whitelisted venue that has been de-whitelisted also reverts.
+        // A previously configured venue whose type has been reset to NONE also reverts.
 
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.AAVE, false);
+        withdrawals.setVenueType(address(vault), address(aToken), IPermissionlessWithdrawals.VenueType.NONE);
 
-        vm.expectRevert(IPermissionlessWithdrawals.VenueNotWhitelisted.selector);
+        vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(vault), address(aToken), recipient, USER_SHARES);
     }

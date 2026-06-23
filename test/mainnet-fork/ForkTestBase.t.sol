@@ -85,9 +85,9 @@ abstract contract ForkTestBase is Test {
         withdrawals.updateVaultConfig(address(spUSDCVault), SPUSDC_PENALTY_AMOUNT, true);
         withdrawals.updateVaultConfig(address(spUSDTVault), SPUSDT_PENALTY_AMOUNT, true);
 
-        withdrawals.updateVenueConfig(address(spETHVault),  SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE, true);
-        withdrawals.updateVenueConfig(address(spUSDCVault), Ethereum.PSM,           IPermissionlessWithdrawals.VenueType.PSM,  true);
-        withdrawals.updateVenueConfig(address(spUSDTVault), SparkLend.USDT_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE, true);
+        withdrawals.setVenueType(address(spETHVault),  SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVenueType(address(spUSDCVault), Ethereum.PSM,           IPermissionlessWithdrawals.VenueType.PSM);
+        withdrawals.setVenueType(address(spUSDTVault), SparkLend.USDT_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE);
 
         vm.stopPrank();
     }

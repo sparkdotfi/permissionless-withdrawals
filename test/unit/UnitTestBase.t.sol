@@ -59,9 +59,9 @@ abstract contract UnitTestBase is Test {
         vm.startPrank(admin);
         withdrawals.updateVaultConfig(address(vault), PENALTY_AMOUNT, true);
 
-        withdrawals.updateVenueConfig(address(vault), address(aToken),       IPermissionlessWithdrawals.VenueType.AAVE,    true);
-        withdrawals.updateVenueConfig(address(vault), address(erc4626Venue), IPermissionlessWithdrawals.VenueType.ERC4626, true);
-        withdrawals.updateVenueConfig(address(vault), address(psmVenue),     IPermissionlessWithdrawals.VenueType.PSM,     true);
+        withdrawals.setVenueType(address(vault), address(aToken),       IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVenueType(address(vault), address(erc4626Venue), IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVenueType(address(vault), address(psmVenue),     IPermissionlessWithdrawals.VenueType.PSM);
         vm.stopPrank();
 
         vault.mint(user, USER_SHARES);

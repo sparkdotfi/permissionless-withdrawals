@@ -63,10 +63,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         withdrawals.permissionlessWithdraw(address(spETHVault), address(0), address(0), 0);
     }
 
-    function test_permissionlessWithdraw_venueNotWhitelisted() external {
+    function test_permissionlessWithdraw_venueTypeNotSet() external {
         address randomVenue = makeAddr("randomVenue");
 
-        vm.expectRevert(IPermissionlessWithdrawals.VenueNotWhitelisted.selector);
+        vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(spETHVault), randomVenue, address(0), 0);
     }
@@ -159,11 +159,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // Admin incorrectly whitelists a USDC Aave venue (underlying USDC) for the WETH vault.
         vm.prank(admin);
-        withdrawals.updateVenueConfig(
+        withdrawals.setVenueType(
             address(spETHVault),
             SparkLend.USDC_SPTOKEN,
-            IPermissionlessWithdrawals.VenueType.AAVE,
-            true
+            IPermissionlessWithdrawals.VenueType.AAVE
         );
 
         _mintSharesAndApprove(spETHVault, WETH, shares);
@@ -188,11 +187,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // Admin incorrectly whitelists a USDC Aave venue (underlying USDC) for the WETH vault.
         vm.prank(admin);
-        withdrawals.updateVenueConfig(
+        withdrawals.setVenueType(
             address(spETHVault),
             SparkLend.USDC_SPTOKEN,
-            IPermissionlessWithdrawals.VenueType.AAVE,
-            true
+            IPermissionlessWithdrawals.VenueType.AAVE
         );
 
         _mintSharesAndApprove(spETHVault, WETH, shares);
@@ -701,7 +699,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626, true);
+        withdrawals.setVenueType(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         _mintSharesAndApprove(spUSDCVault, USDC, shares);
 
@@ -964,7 +962,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.prank(admin);
-        withdrawals.updateVenueConfig(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626, true);
+        withdrawals.setVenueType(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         _mintSharesAndApprove(spUSDCVault, USDC, shares);
 
@@ -1098,8 +1096,8 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
         // Whitelist the ERC4626 and Aave (spToken) USDC venues. The PSM venue is whitelisted in setUp.
         vm.startPrank(admin);
-        withdrawals.updateVenueConfig(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626, true);
-        withdrawals.updateVenueConfig(address(spUSDCVault), SparkLend.USDC_SPTOKEN,         IPermissionlessWithdrawals.VenueType.AAVE,    true);
+        withdrawals.setVenueType(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVenueType(address(spUSDCVault), SparkLend.USDC_SPTOKEN,        IPermissionlessWithdrawals.VenueType.AAVE);
         vm.stopPrank();
 
         _mintSharesAndApprove(spUSDCVault, USDC, totalShares);

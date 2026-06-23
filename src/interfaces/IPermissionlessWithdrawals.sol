@@ -9,17 +9,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /*** Types                                                                                  ***/
     /**********************************************************************************************/
 
-    enum VenueType { AAVE, ERC4626, PSM }
-
-    /**
-     *  @dev   Configuration for a specific venue.
-     *  @param whitelisted Whether the venue is allowed to be used for permissionless withdrawals.
-     *  @param venueType   The type of venue used for the withdrawals.
-     */
-    struct VenueConfig {
-        bool      whitelisted;
-        VenueType venueType;
-    }
+    enum VenueType { NONE, AAVE, ERC4626, PSM }
 
     /**
      *  @dev   Configuration for a specific vault.
@@ -39,7 +29,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     error InsufficientAssetsToCoverPenalty(uint256 required, uint256 available);
     error InsufficientVenueLiquidity(uint256 required, uint256 available);
     error VaultNotWhitelisted();
-    error VenueNotWhitelisted();
+    error VenueTypeNotSet();
     error ZeroAdminAddress();
     error ZeroMainnetControllerAddress();
     error ZeroPenaltyAmount();
@@ -73,17 +63,15 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     );
 
     /**
-     *  @dev   Emitted when the admin updates a venue's configuration.
-     *  @param vault       Address of the vault being configured.
-     *  @param venue       Address of the venue being configured.
-     *  @param venueType   The type of venue being configured.
-     *  @param whitelisted Whether the venue is now whitelisted.
+     *  @dev   Emitted when the admin sets the type of a venue.
+     *  @param vault     Address of the vault being configured.
+     *  @param venue     Address of the venue being configured.
+     *  @param venueType The type of venue being configured.
      */
-    event VenueConfigUpdated(
+    event VenueTypeSet(
         address indexed vault,
         address indexed venue,
-        VenueType       venueType,
-        bool            whitelisted
+        VenueType       venueType
     );
 
     /**********************************************************************************************/
@@ -104,18 +92,16 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     ) external;
 
     /**
-     *  @dev   Updates the configuration for a given venue.
+     *  @dev   Sets the type of a given venue.
      *         This function can only called by accounts with DEFAULT_ADMIN_ROLE.
-     *  @param vault       Address of the vault being configured.
-     *  @param venue       Address of the venue to configure.
-     *  @param venueType   The type of venue being configured.
-     *  @param whitelisted Whether the venue should be whitelisted.
+     *  @param vault     Address of the vault being configured.
+     *  @param venue     Address of the venue to set the type of.
+     *  @param venueType The type of venue to set.
      */
-    function updateVenueConfig(
+    function setVenueType(
         address   vault,
         address   venue,
-        VenueType venueType,
-        bool      whitelisted
+        VenueType venueType
     ) external;
 
     /**********************************************************************************************/
@@ -144,10 +130,10 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
         view
         returns (bool whitelisted, uint256 penaltyAmount);
 
-    function venueConfig(address vault, address venue)
+    function venueTypes(address vault, address venue)
         external
         view
-        returns (bool whitelisted, VenueType venueType);
+        returns (VenueType venueType);
 
     function version() external pure returns (string memory);
 

@@ -57,8 +57,9 @@ abstract contract PermissionlessWithdrawals is
     address public mainnetController;
     address public penaltyRecipient;
 
-    mapping(address vault => VaultConfig config)                           public vaultConfig;
-    mapping(address vault => mapping(address venue => VenueConfig config)) public venueConfig;
+    mapping(address vault => VaultConfig config) public vaultConfig;
+
+    mapping(address vault => mapping(address venue => VenueType venueType)) public venueTypes;
 
     /**********************************************************************************************/
     /*** Initialization and upgradeability                                                      ***/
@@ -113,11 +114,10 @@ abstract contract PermissionlessWithdrawals is
         emit VaultConfigUpdated(vault, penaltyAmount, whitelisted);
     }
 
-    function updateVenueConfig(
+    function setVenueType(
         address   vault,
         address   venue,
-        VenueType venueType,
-        bool      whitelisted
+        VenueType venueType
     )
         external
         override
@@ -127,12 +127,9 @@ abstract contract PermissionlessWithdrawals is
         require(vault != address(0), ZeroVaultAddress());
         require(venue != address(0), ZeroVenueAddress());
 
-        venueConfig[vault][venue] = VenueConfig({
-            venueType   : venueType,
-            whitelisted : whitelisted
-        });
+        venueTypes[vault][venue] = venueType;
 
-        emit VenueConfigUpdated(vault, venue, venueType, whitelisted);
+        emit VenueTypeSet(vault, venue, venueType);
     }
 
     /**********************************************************************************************/
@@ -152,10 +149,11 @@ abstract contract PermissionlessWithdrawals is
         // Step 1: Validate the vault, venue and recipient
 
         VaultConfig memory vaultConfig_ = vaultConfig[vault];
+        VenueType          venueType    = venueTypes[vault][venue];
 
-        require(vaultConfig_.whitelisted,              VaultNotWhitelisted());
-        require(venueConfig[vault][venue].whitelisted, VenueNotWhitelisted());
-        require(recipient != address(0),               ZeroRecipientAddress());
+        require(vaultConfig_.whitelisted,    VaultNotWhitelisted());
+        require(venueType != VenueType.NONE, VenueTypeNotSet());
+        require(recipient != address(0),     ZeroRecipientAddress());
 
         // Step 2: Calculate additional amount needed for user withdrawal
 
@@ -179,7 +177,7 @@ abstract contract PermissionlessWithdrawals is
         // Step 3: Withdraw the assets from the venue if necessary
 
         if (assetsToWithdraw > 0) {
-            _withdrawFromVenue(vault, venue, asset, proxy, assetsToWithdraw, proxyStartingBalance);
+            _withdrawFromVenue(venueType, venue, asset, proxy, assetsToWithdraw, proxyStartingBalance);
         }
 
         // Step 4: Transfer withdrawn assets to the vault if necessary
@@ -218,26 +216,24 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     function _withdrawFromVenue(
-        address vault,
-        address venue,
-        address asset,
-        address proxy,
-        uint256 assetsToWithdraw,
-        uint256 proxyStartingBalance
+        VenueType venueType,
+        address   venue,
+        address   asset,
+        address   proxy,
+        uint256   assetsToWithdraw,
+        uint256   proxyStartingBalance
     ) internal {
-        VenueConfig memory venueConfig_ = venueConfig[vault][venue];
-
-        if (venueConfig_.venueType == VenueType.AAVE) {
+        if (venueType == VenueType.AAVE) {
             require(IATokenLike(venue).UNDERLYING_ASSET_ADDRESS() == asset, IncorrectVenue());
 
             _withdrawAave(venue, assetsToWithdraw);
         }
-        else if (venueConfig_.venueType == VenueType.ERC4626) {
+        else if (venueType == VenueType.ERC4626) {
             require(IERC4626Like(venue).asset() == asset, IncorrectVenue());
 
             _withdrawERC4626(venue, assetsToWithdraw, type(uint256).max);
         }
-        else if (venueConfig_.venueType == VenueType.PSM) {
+        else if (venueType == VenueType.PSM) {
             require(IPSMLike(venue).gem() == asset, IncorrectVenue());
 
             _mintUSDS(assetsToWithdraw * USDS_CONVERSION_PRECISION);
