@@ -173,6 +173,15 @@ abstract contract ForkTestBase is Test {
         vm.stopPrank();
     }
 
+    // Mocks `asset.balanceOf(proxy)` to return `before_` on the next read and `after_` on the read after that.
+    function _mockProxyDelivery(IERC20 asset, address proxy_, uint256 before_, uint256 after_) internal {
+        bytes[] memory deliveries = new bytes[](2);
+        deliveries[0] = abi.encode(before_);
+        deliveries[1] = abi.encode(after_);
+
+        vm.mockCalls(address(asset), abi.encodeCall(IERC20.balanceOf, (proxy_)), deliveries);
+    }
+
     function _assertBalances(
         ISparkVaultLike vault,
         IERC20          asset,

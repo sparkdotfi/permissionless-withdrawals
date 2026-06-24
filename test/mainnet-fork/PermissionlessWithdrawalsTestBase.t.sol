@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
+import { IAccessControl }  from "../../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import { ERC1967Proxy }    from "../../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
+import { Initializable }   from "../../lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import { UUPSUpgradeable } from "../../lib/openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
 import { Ethereum }  from "../../lib/spark-address-registry/src/Ethereum.sol";
 import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
+import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.sol";
+
+import { PermissionlessWithdrawalsV2Mock } from "../mocks/PermissionlessWithdrawalsV2Mock.sol";
 
 import { ForkTestBase, IERC20, ISparkVaultLike } from "./ForkTestBase.t.sol";
 
@@ -37,7 +45,306 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
     function _expectRateLimitExceededRevert() internal virtual;
 
     /**********************************************************************************************/
-    /*** Failure tests                                                                          ***/
+    /*** initialize                                                                             ***/
+    /**********************************************************************************************/
+
+    function test_initialize_alreadyInitialized() external {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        withdrawals.initialize(admin, address(controller), penaltyRecipient);
+    }
+
+    function test_initialize_zeroAdminAddress() external {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroAdminAddress.selector);
+        new ERC1967Proxy(address(implementation), abi.encodeCall(
+            PermissionlessWithdrawals.initialize, (address(0), address(0), address(0))
+        ));
+    }
+
+    function test_initialize_zeroControllerAddress() external {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroControllerAddress.selector);
+        new ERC1967Proxy(address(implementation), abi.encodeCall(
+            PermissionlessWithdrawals.initialize, (admin, address(0), address(0))
+        ));
+    }
+
+    function test_initialize_zeroPenaltyRecipientAddress() external {
+        PermissionlessWithdrawals implementation = _deployImplementation();
+
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroPenaltyRecipientAddress.selector);
+        new ERC1967Proxy(address(implementation), abi.encodeCall(
+            PermissionlessWithdrawals.initialize, (admin, address(controller), address(0))
+        ));
+    }
+
+    function test_initialize() external {
+        PermissionlessWithdrawals newWithdrawals = _deployWithdrawals(
+            admin,
+            address(controller),
+            penaltyRecipient
+        );
+
+        assertEq(newWithdrawals.hasRole(newWithdrawals.DEFAULT_ADMIN_ROLE(), admin),     true);
+        assertEq(newWithdrawals.getRoleMemberCount(newWithdrawals.DEFAULT_ADMIN_ROLE()), 1);
+
+        assertEq(newWithdrawals.controller(),       address(controller));
+        assertEq(newWithdrawals.penaltyRecipient(), penaltyRecipient);
+    }
+
+    /**********************************************************************************************/
+    /*** _authorizeUpgrade                                                                      ***/
+    /**********************************************************************************************/
+
+    function test_upgrade_unauthorized() external {
+        address unauthorized = makeAddr("unauthorized");
+
+        PermissionlessWithdrawalsV2Mock newImplementation = new PermissionlessWithdrawalsV2Mock();
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        UUPSUpgradeable(address(withdrawals)).upgradeToAndCall(address(newImplementation), "");
+    }
+
+    function test_upgrade() external {
+        address controllerBefore       = withdrawals.controller();
+        address penaltyRecipientBefore = withdrawals.penaltyRecipient();
+
+        ( bool whitelistedBefore, uint256 penaltyBefore ) = withdrawals.vaultConfig(address(spETHVault));
+
+        assertEq(controllerBefore,       address(controller));
+        assertEq(penaltyRecipientBefore, penaltyRecipient);
+        assertEq(whitelistedBefore,      true);
+        assertEq(penaltyBefore,          SPETH_PENALTY_AMOUNT);
+
+        PermissionlessWithdrawalsV2Mock newImplementation = new PermissionlessWithdrawalsV2Mock();
+
+        vm.prank(admin);
+        UUPSUpgradeable(address(withdrawals)).upgradeToAndCall(address(newImplementation), "");
+
+        // The implementation pointer is updated to the new implementation.
+        assertEq(withdrawals.getImplementation(), address(newImplementation));
+
+        // The new implementation's logic is live.
+        assertEq(PermissionlessWithdrawalsV2Mock(address(withdrawals)).isV2(), true);
+
+        // Storage is preserved across the upgrade.
+        assertEq(withdrawals.controller(),       controllerBefore);
+        assertEq(withdrawals.penaltyRecipient(), penaltyRecipientBefore);
+
+        ( bool whitelistedAfter, uint256 penaltyAfter ) = withdrawals.vaultConfig(address(spETHVault));
+
+        assertEq(whitelistedAfter, whitelistedBefore);
+        assertEq(penaltyAfter,     penaltyBefore);
+    }
+
+    /**********************************************************************************************/
+    /*** updateVaultConfig                                                                      ***/
+    /**********************************************************************************************/
+
+    function test_updateVaultConfig_reentrancy() external {
+        _setWithdrawalsEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        withdrawals.updateVaultConfig(address(0), 0, true);
+    }
+
+    function test_updateVaultConfig_unauthorized() external {
+        address unauthorized = makeAddr("unauthorized");
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        withdrawals.updateVaultConfig(address(0), 0, true);
+    }
+
+    function test_updateVaultConfig_zeroVaultAddress() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(address(0), 0, true);
+    }
+
+    function test_updateVaultConfig_zeroPenaltyAmount() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroPenaltyAmount.selector);
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(address(spETHVault), 0, true);
+    }
+
+    function test_updateVaultConfig() external {
+        address newVault = makeAddr("newVault");
+
+        ( bool whitelisted, uint256 penaltyAmount ) = withdrawals.vaultConfig(newVault);
+
+        assertEq(whitelisted,   false);
+        assertEq(penaltyAmount, 0);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.VaultConfigUpdated(newVault, 50e18, true);
+
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(newVault, 50e18, true);
+
+        ( whitelisted, penaltyAmount ) = withdrawals.vaultConfig(newVault);
+
+        assertEq(whitelisted,   true);
+        assertEq(penaltyAmount, 50e18);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.VaultConfigUpdated(newVault, 50e18, false);
+
+        vm.prank(admin);
+        withdrawals.updateVaultConfig(newVault, 50e18, false);
+
+        ( whitelisted, penaltyAmount ) = withdrawals.vaultConfig(newVault);
+
+        assertEq(whitelisted,   false);
+        assertEq(penaltyAmount, 50e18);
+    }
+
+    /**********************************************************************************************/
+    /*** setVenueType                                                                           ***/
+    /**********************************************************************************************/
+
+    function test_setVenueType_reentrancy() external {
+        _setWithdrawalsEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.NONE);
+    }
+
+    function test_setVenueType_unauthorized() external {
+        address unauthorized = makeAddr("unauthorized");
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.NONE);
+    }
+
+    function test_setVenueType_zeroVaultAddress() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
+        vm.prank(admin);
+        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.NONE);
+    }
+
+    function test_setVenueType_zeroVenueAddress() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroVenueAddress.selector);
+        vm.prank(admin);
+        withdrawals.setVenueType(address(spETHVault), address(0), IPermissionlessWithdrawals.VenueType.NONE);
+    }
+
+    function test_setVenueType_outOfRangeVenueType() external {
+        bytes memory badCall = abi.encodeWithSelector(
+            IPermissionlessWithdrawals.setVenueType.selector,
+            address(spETHVault),
+            SparkLend.WETH_SPTOKEN,
+            uint8(4)        // Out-of-range VenueType
+        );
+
+        vm.prank(admin);
+        ( bool success, bytes memory returnData ) = address(withdrawals).call(badCall);
+
+        // The ABI decoder rejects the out-of-range enum at the calldata boundary, reverting with
+        // empty data before the function body (and its modifiers) runs.
+        assertEq(success,           false);
+        assertEq(returnData.length, 0);
+    }
+
+    function test_setVenueType() external {
+        address newVenue = makeAddr("newVenue");
+
+        assertEq(
+            uint256(withdrawals.venueTypes(address(spETHVault), newVenue)),
+            uint256(IPermissionlessWithdrawals.VenueType.NONE)
+        );
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.VenueTypeSet(
+            address(spETHVault),
+            newVenue,
+            IPermissionlessWithdrawals.VenueType.PSM
+        );
+
+        vm.prank(admin);
+        withdrawals.setVenueType(address(spETHVault), newVenue, IPermissionlessWithdrawals.VenueType.PSM);
+
+        assertEq(
+            uint256(withdrawals.venueTypes(address(spETHVault), newVenue)),
+            uint256(IPermissionlessWithdrawals.VenueType.PSM)
+        );
+
+        // Resetting the type to NONE disables the venue.
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.VenueTypeSet(
+            address(spETHVault),
+            newVenue,
+            IPermissionlessWithdrawals.VenueType.NONE
+        );
+
+        vm.prank(admin);
+        withdrawals.setVenueType(address(spETHVault), newVenue, IPermissionlessWithdrawals.VenueType.NONE);
+
+        assertEq(
+            uint256(withdrawals.venueTypes(address(spETHVault), newVenue)),
+            uint256(IPermissionlessWithdrawals.VenueType.NONE)
+        );
+    }
+
+    /**********************************************************************************************/
+    /*** setPenaltyRecipient                                                                    ***/
+    /**********************************************************************************************/
+
+    function test_setPenaltyRecipient_reentrancy() external {
+        _setWithdrawalsEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        withdrawals.setPenaltyRecipient(penaltyRecipient);
+    }
+
+    function test_setPenaltyRecipient_unauthorized() external {
+        address unauthorized = makeAddr("unauthorized");
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        withdrawals.setPenaltyRecipient(penaltyRecipient);
+    }
+
+    function test_setPenaltyRecipient_zeroPenaltyRecipientAddress() external {
+        vm.expectRevert(IPermissionlessWithdrawals.ZeroPenaltyRecipientAddress.selector);
+        vm.prank(admin);
+        withdrawals.setPenaltyRecipient(address(0));
+    }
+
+    function test_setPenaltyRecipient() external {
+        address newPenaltyRecipient = makeAddr("newPenaltyRecipient");
+
+        assertEq(withdrawals.penaltyRecipient(), penaltyRecipient);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.PenaltyRecipientSet(newPenaltyRecipient);
+
+        vm.prank(admin);
+        withdrawals.setPenaltyRecipient(newPenaltyRecipient);
+
+        assertEq(withdrawals.penaltyRecipient(), newPenaltyRecipient);
+    }
+
+    /**********************************************************************************************/
+    /*** permissionlessWithdraw                                                                 ***/
     /**********************************************************************************************/
 
     function test_permissionlessWithdraw_reentrancy() external {
@@ -69,12 +376,67 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(spETHVault), randomVenue, address(0), 0);
+
+        // A previously configured venue whose type has been reset to NONE also reverts.
+
+        vm.prank(admin);
+        withdrawals.setVenueType(address(spETHVault), SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.NONE);
+
+        vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, address(0), 0);
     }
 
     function test_permissionlessWithdraw_zeroRecipientAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroRecipientAddress.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, address(0), 0);
+    }
+
+    function test_permissionlessWithdraw_incorrectVenue_aave() external {
+        // The Aave venue reports a different underlying than the vault asset.
+        address otherAsset = makeAddr("otherAsset");
+        vm.mockCall(
+            address(SparkLend.WETH_SPTOKEN),
+            abi.encodeWithSignature("UNDERLYING_ASSET_ADDRESS()"),
+            abi.encode(otherAsset)
+        );
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, 10_000e18);
+    }
+
+    function test_permissionlessWithdraw_incorrectVenue_erc4626() external {
+        // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
+        vm.prank(admin);
+        withdrawals.setVenueType(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+
+        // The ERC4626 venue reports a different asset than the vault asset.
+        address otherAsset = makeAddr("otherAsset");
+        vm.mockCall(
+            address(Ethereum.MORPHO_VAULT_USDC_BC),
+            abi.encodeWithSignature("asset()"),
+            abi.encode(otherAsset)
+        );
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spUSDCVault), Ethereum.MORPHO_VAULT_USDC_BC, recipient, 100_000_000e6);
+    }
+
+    function test_permissionlessWithdraw_incorrectVenue_psm() external {
+        // The PSM venue reports a different gem than the vault asset.
+        address otherAsset = makeAddr("otherAsset");
+        vm.mockCall(
+            address(Ethereum.PSM),
+            abi.encodeWithSignature("gem()"),
+            abi.encode(otherAsset)
+        );
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spUSDCVault), Ethereum.PSM, recipient, 1_000_000_000e6);
     }
 
     function test_permissionlessWithdraw_notRelayer() external {
@@ -100,30 +462,6 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
     }
 
-    function test_permissionlessWithdraw_insufficientVenueLiquidity() external {
-        uint256 shares = 400_000e18;
-        uint256 assets = spETHVault.convertToAssets(shares);
-
-        _mintSharesAndApprove(spETHVault, WETH, shares);
-
-        // Simulate the SLL moving funds out of the vault.
-        deal(address(WETH), address(spETHVault), 0);
-
-        // Proxy holds no idle, so the full amount must be withdrawn from the Aave venue.
-        deal(address(WETH), proxy, 0);
-
-        // Mock the Aave venue withdrawal to deliver zero assets.
-        _mockWithdrawAaveReturnsZero(SparkLend.WETH_SPTOKEN, assets);
-
-        vm.expectRevert(abi.encodeWithSelector(
-            IPermissionlessWithdrawals.InsufficientVenueLiquidity.selector,
-            assets,
-            0
-        ));
-        vm.prank(user);
-        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
-    }
-
     function test_permissionlessWithdraw_sll_rateLimitExceeded() external {
         uint256 shares = 1_000_000_000e6;
 
@@ -135,6 +473,36 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         _expectRateLimitExceededRevert();
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(spUSDCVault), Ethereum.PSM, recipient, shares);
+    }
+
+    function test_permissionlessWithdraw_insufficientVenueLiquidityBoundary() external {
+        uint256 shares = 10_000e18;
+        uint256 assets = spETHVault.convertToAssets(shares);
+
+        _mintSharesAndApprove(spETHVault, WETH, shares);
+
+        // Empty the vault and proxy so the full amount must be drawn from the Aave venue.
+        deal(address(WETH), address(spETHVault), 0);
+        deal(address(WETH), proxy,               0);
+
+        // Neutralise the real venue call and simulate it delivering one wei short of the request:
+        // the proxy reads zero before the withdrawal and `assets - 1` after.
+        _mockWithdrawAaveReturnsZero(SparkLend.WETH_SPTOKEN, assets);
+        _mockProxyDelivery(WETH, proxy, 0, assets - 1);
+
+        vm.expectRevert(abi.encodeWithSelector(
+            IPermissionlessWithdrawals.InsufficientVenueLiquidity.selector,
+            assets,
+            assets - 1
+        ));
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
+
+        // Delivering the full requested amount via the real venue succeeds.
+        vm.clearMockedCalls();
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
     }
 
     function test_permissionlessWithdraw_insufficientAssetsToCoverPenaltyBoundary() external {
