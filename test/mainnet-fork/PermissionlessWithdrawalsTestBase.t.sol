@@ -90,8 +90,8 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         assertEq(newWithdrawals.hasRole(newWithdrawals.DEFAULT_ADMIN_ROLE(), admin),     true);
         assertEq(newWithdrawals.getRoleMemberCount(newWithdrawals.DEFAULT_ADMIN_ROLE()), 1);
 
-        assertEq(newWithdrawals.controller(),       address(controller));
-        assertEq(newWithdrawals.penaltyRecipient(), penaltyRecipient);
+        assertEq(newWithdrawals.getController(),       address(controller));
+        assertEq(newWithdrawals.getPenaltyRecipient(), penaltyRecipient);
     }
 
     /**********************************************************************************************/
@@ -113,15 +113,15 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
     }
 
     function test_upgrade() external {
-        address controllerBefore       = withdrawals.controller();
-        address penaltyRecipientBefore = withdrawals.penaltyRecipient();
+        address controllerBefore       = withdrawals.getController();
+        address penaltyRecipientBefore = withdrawals.getPenaltyRecipient();
 
-        ( bool whitelistedBefore, uint256 penaltyBefore ) = withdrawals.vaultConfig(address(spETHVault));
+        IPermissionlessWithdrawals.VaultConfig memory vaultConfigBefore = withdrawals.getVaultConfig(address(spETHVault));
 
-        assertEq(controllerBefore,       address(controller));
-        assertEq(penaltyRecipientBefore, penaltyRecipient);
-        assertEq(whitelistedBefore,      true);
-        assertEq(penaltyBefore,          SPETH_PENALTY_AMOUNT);
+        assertEq(controllerBefore,                address(controller));
+        assertEq(penaltyRecipientBefore,          penaltyRecipient);
+        assertEq(vaultConfigBefore.whitelisted,   true);
+        assertEq(vaultConfigBefore.penaltyAmount, SPETH_PENALTY_AMOUNT);
 
         PermissionlessWithdrawalsV2Mock newImplementation = new PermissionlessWithdrawalsV2Mock();
 
@@ -135,13 +135,13 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         assertEq(PermissionlessWithdrawalsV2Mock(address(withdrawals)).isV2(), true);
 
         // Storage is preserved across the upgrade.
-        assertEq(withdrawals.controller(),       controllerBefore);
-        assertEq(withdrawals.penaltyRecipient(), penaltyRecipientBefore);
+        assertEq(withdrawals.getController(),       controllerBefore);
+        assertEq(withdrawals.getPenaltyRecipient(), penaltyRecipientBefore);
 
-        ( bool whitelistedAfter, uint256 penaltyAfter ) = withdrawals.vaultConfig(address(spETHVault));
+        IPermissionlessWithdrawals.VaultConfig memory vaultConfigAfter = withdrawals.getVaultConfig(address(spETHVault));
 
-        assertEq(whitelistedAfter, whitelistedBefore);
-        assertEq(penaltyAfter,     penaltyBefore);
+        assertEq(vaultConfigAfter.whitelisted,   vaultConfigBefore.whitelisted);
+        assertEq(vaultConfigAfter.penaltyAmount, vaultConfigBefore.penaltyAmount);
     }
 
     /**********************************************************************************************/
@@ -181,10 +181,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
     function test_updateVaultConfig() external {
         address newVault = makeAddr("newVault");
 
-        ( bool whitelisted, uint256 penaltyAmount ) = withdrawals.vaultConfig(newVault);
+        IPermissionlessWithdrawals.VaultConfig memory vaultConfig = withdrawals.getVaultConfig(newVault);
 
-        assertEq(whitelisted,   false);
-        assertEq(penaltyAmount, 0);
+        assertEq(vaultConfig.whitelisted,   false);
+        assertEq(vaultConfig.penaltyAmount, 0);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VaultConfigUpdated(newVault, 50e18, true);
@@ -192,10 +192,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         vm.prank(admin);
         withdrawals.updateVaultConfig(newVault, 50e18, true);
 
-        ( whitelisted, penaltyAmount ) = withdrawals.vaultConfig(newVault);
+        vaultConfig = withdrawals.getVaultConfig(newVault);
 
-        assertEq(whitelisted,   true);
-        assertEq(penaltyAmount, 50e18);
+        assertEq(vaultConfig.whitelisted,   true);
+        assertEq(vaultConfig.penaltyAmount, 50e18);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VaultConfigUpdated(newVault, 50e18, false);
@@ -203,10 +203,10 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         vm.prank(admin);
         withdrawals.updateVaultConfig(newVault, 50e18, false);
 
-        ( whitelisted, penaltyAmount ) = withdrawals.vaultConfig(newVault);
+        vaultConfig = withdrawals.getVaultConfig(newVault);
 
-        assertEq(whitelisted,   false);
-        assertEq(penaltyAmount, 50e18);
+        assertEq(vaultConfig.whitelisted,   false);
+        assertEq(vaultConfig.penaltyAmount, 50e18);
     }
 
     /**********************************************************************************************/
@@ -264,7 +264,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         address newVenue = makeAddr("newVenue");
 
         assertEq(
-            uint256(withdrawals.venueTypes(address(spETHVault), newVenue)),
+            uint256(withdrawals.getVenueType(address(spETHVault), newVenue)),
             uint256(IPermissionlessWithdrawals.VenueType.NONE)
         );
 
@@ -279,7 +279,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         withdrawals.setVenueType(address(spETHVault), newVenue, IPermissionlessWithdrawals.VenueType.PSM);
 
         assertEq(
-            uint256(withdrawals.venueTypes(address(spETHVault), newVenue)),
+            uint256(withdrawals.getVenueType(address(spETHVault), newVenue)),
             uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
 
@@ -296,7 +296,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         withdrawals.setVenueType(address(spETHVault), newVenue, IPermissionlessWithdrawals.VenueType.NONE);
 
         assertEq(
-            uint256(withdrawals.venueTypes(address(spETHVault), newVenue)),
+            uint256(withdrawals.getVenueType(address(spETHVault), newVenue)),
             uint256(IPermissionlessWithdrawals.VenueType.NONE)
         );
     }
@@ -332,7 +332,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
     function test_setPenaltyRecipient() external {
         address newPenaltyRecipient = makeAddr("newPenaltyRecipient");
 
-        assertEq(withdrawals.penaltyRecipient(), penaltyRecipient);
+        assertEq(withdrawals.getPenaltyRecipient(), penaltyRecipient);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PenaltyRecipientSet(newPenaltyRecipient);
@@ -340,7 +340,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         vm.prank(admin);
         withdrawals.setPenaltyRecipient(newPenaltyRecipient);
 
-        assertEq(withdrawals.penaltyRecipient(), newPenaltyRecipient);
+        assertEq(withdrawals.getPenaltyRecipient(), newPenaltyRecipient);
     }
 
     /**********************************************************************************************/
@@ -439,6 +439,28 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         withdrawals.permissionlessWithdraw(address(spUSDCVault), Ethereum.PSM, recipient, 1_000_000_000e6);
     }
 
+    function test_permissionlessWithdraw_incorrectVenue_assetMismatch() external {
+        uint256 shares = 10_000e18;
+
+        // Admin incorrectly whitelists a USDC Aave venue (underlying USDC) for the WETH vault.
+        vm.prank(admin);
+        withdrawals.setVenueType(
+            address(spETHVault),
+            SparkLend.USDC_SPTOKEN,
+            IPermissionlessWithdrawals.VenueType.AAVE
+        );
+
+        _mintSharesAndApprove(spETHVault, WETH, shares);
+
+        // The vault and proxy are empty, so the full amount must be drawn from the venue.
+        deal(address(WETH), address(spETHVault), 0);
+        deal(address(WETH), proxy,               0);
+
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.USDC_SPTOKEN, recipient, shares);
+    }
+
     function test_permissionlessWithdraw_notRelayer() external {
         uint256 shares = 10_000e18;
 
@@ -522,26 +544,44 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
     }
 
-    function test_permissionlessWithdraw_incorrectVenue() external {
+    function test_permissionlessWithdraw_insufficientAllowanceBoundary() external {
         uint256 shares = 10_000e18;
-
-        // Admin incorrectly whitelists a USDC Aave venue (underlying USDC) for the WETH vault.
-        vm.prank(admin);
-        withdrawals.setVenueType(
-            address(spETHVault),
-            SparkLend.USDC_SPTOKEN,
-            IPermissionlessWithdrawals.VenueType.AAVE
-        );
 
         _mintSharesAndApprove(spETHVault, WETH, shares);
 
-        // The vault and proxy are empty, so the full amount must be drawn from the venue.
-        deal(address(WETH), address(spETHVault), 0);
-        deal(address(WETH), proxy,               0);
-
-        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        // Resetting the allowance to one less share than the requested amount.
         vm.prank(user);
-        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.USDC_SPTOKEN, recipient, shares);
+        spETHVault.approve(address(withdrawals), shares - 1);
+
+        vm.expectRevert("SparkVault/insufficient-allowance");
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
+
+        // Approving the full amount succeeds.
+        vm.prank(user);
+        spETHVault.approve(address(withdrawals), shares);
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
+    }
+
+    function test_permissionlessWithdraw_insufficientShareBalanceBoundary() external {
+        uint256 shares = 10_000e18;
+
+        _mintSharesAndApprove(spETHVault, WETH, shares);
+
+        // Resetting the shares balance to one less share than the requested amount.
+        deal(address(spETHVault), user, shares - 1);
+
+        vm.expectRevert("SparkVault/insufficient-balance");
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
+
+        // Resetting the shares balance to the full amount succeeds.
+        deal(address(spETHVault), user, shares);
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(address(spETHVault), SparkLend.WETH_SPTOKEN, recipient, shares);
     }
 
     /**********************************************************************************************/

@@ -134,23 +134,17 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /*** View/Pure functions                                                                    ***/
     /**********************************************************************************************/
 
-    function controller() external view returns (address);
+    function getController() external view returns (address);
 
     function getImplementation() external view returns (address);
 
-    function penaltyRecipient() external view returns (address);
+    function getPenaltyRecipient() external view returns (address);
+
+    function getVaultConfig(address vault) external view returns (VaultConfig memory);
+
+    function getVenueType(address vault, address venue) external view returns (VenueType);
 
     function USDS_CONVERSION_PRECISION() external pure returns (uint256);
-
-    function vaultConfig(address vault)
-        external
-        view
-        returns (bool whitelisted, uint256 penaltyAmount);
-
-    function venueTypes(address vault, address venue)
-        external
-        view
-        returns (VenueType venueType);
 
     function VERSION() external pure returns (string memory);
 

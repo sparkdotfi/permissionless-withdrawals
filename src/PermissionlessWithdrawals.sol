@@ -48,19 +48,37 @@ abstract contract PermissionlessWithdrawals is
     using SafeERC20 for IERC20;
 
     /**********************************************************************************************/
-    /*** Declarations                                                                           ***/
+    /*** PermissionlessWithdrawals Storage Domain                                               ***/
+    /**********************************************************************************************/
+
+    /// @custom:storage-location erc7201:spark.withdrawals.storage.PermissionlessWithdrawals.v1
+    struct PermissionlessWithdrawalsStorage {
+        address controller;
+        address penaltyRecipient;
+        mapping(address vault => VaultConfig config) vaultConfig;
+        mapping(address vault => mapping(address venue => VenueType venueType)) venueTypes;
+    }
+    // keccak256(abi.encode(uint256(keccak256("spark.withdrawals.storage.PermissionlessWithdrawals.v1")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 internal constant _PERMISSIONLESS_WITHDRAWALS_STORAGE_LOCATION =
+        0x55695ff96e8e70f27abe05ec6edfd21471d0cc570eaae83e862e9d6b6779da00;
+
+    function _getPermissionlessWithdrawalsStorage() 
+        internal
+        pure
+        returns (PermissionlessWithdrawalsStorage storage $) 
+    {
+        assembly {
+            $.slot := _PERMISSIONLESS_WITHDRAWALS_STORAGE_LOCATION
+        }
+    }
+
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
     string  public constant override VERSION = "1.0.0";
 
     uint256 public constant override USDS_CONVERSION_PRECISION = 1e12;
-
-    address public override controller;
-    address public override penaltyRecipient;
-
-    mapping(address vault => VaultConfig config) public vaultConfig;
-
-    mapping(address vault => mapping(address venue => VenueType venueType)) public venueTypes;
 
     /**********************************************************************************************/
     /*** Initialization and upgradeability                                                      ***/
@@ -80,15 +98,13 @@ abstract contract PermissionlessWithdrawals is
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 
-        controller       = controller_;
-        penaltyRecipient = penaltyRecipient_;
+        PermissionlessWithdrawalsStorage storage $ = _getPermissionlessWithdrawalsStorage();
+
+        $.controller       = controller_;
+        $.penaltyRecipient = penaltyRecipient_;
     }
 
     function _authorizeUpgrade(address) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {}
-
-    function getImplementation() external view returns (address) {
-        return ERC1967Utils.getImplementation();
-    }
 
     /**********************************************************************************************/
     /*** Admin functions                                                                        ***/
@@ -107,7 +123,7 @@ abstract contract PermissionlessWithdrawals is
         require(vault != address(0), ZeroVaultAddress());
         require(penaltyAmount > 0,   ZeroPenaltyAmount());
 
-        vaultConfig[vault] = VaultConfig({
+        _getPermissionlessWithdrawalsStorage().vaultConfig[vault] = VaultConfig({
             penaltyAmount : penaltyAmount,
             whitelisted   : whitelisted
         });
@@ -128,7 +144,7 @@ abstract contract PermissionlessWithdrawals is
         require(vault != address(0), ZeroVaultAddress());
         require(venue != address(0), ZeroVenueAddress());
 
-        venueTypes[vault][venue] = venueType;
+        _getPermissionlessWithdrawalsStorage().venueTypes[vault][venue] = venueType;
 
         emit VenueTypeSet(vault, venue, venueType);
     }
@@ -141,7 +157,7 @@ abstract contract PermissionlessWithdrawals is
     {
         require(penaltyRecipient_ != address(0), ZeroPenaltyRecipientAddress());
 
-        penaltyRecipient = penaltyRecipient_;
+        _getPermissionlessWithdrawalsStorage().penaltyRecipient = penaltyRecipient_;
 
         emit PenaltyRecipientSet(penaltyRecipient_);
     }
@@ -162,8 +178,10 @@ abstract contract PermissionlessWithdrawals is
     {
         // Step 1: Validate the vault, venue and recipient
 
-        VaultConfig memory vaultConfig_ = vaultConfig[vault];
-        VenueType          venueType    = venueTypes[vault][venue];
+        PermissionlessWithdrawalsStorage storage $ = _getPermissionlessWithdrawalsStorage();
+
+        VaultConfig memory vaultConfig_ = $.vaultConfig[vault];
+        VenueType          venueType    = $.venueTypes[vault][venue];
 
         require(vaultConfig_.whitelisted,    VaultNotWhitelisted());
         require(venueType != VenueType.NONE, VenueTypeNotSet());
@@ -172,10 +190,9 @@ abstract contract PermissionlessWithdrawals is
         // Step 2: Calculate additional amount needed for user withdrawal
 
         address asset = IERC4626Like(vault).asset();
-        address proxy = _proxy();
 
         uint256 assetsRequested      = IERC4626Like(vault).convertToAssets(shares);
-        uint256 proxyStartingBalance = IERC20(asset).balanceOf(proxy);
+        uint256 proxyStartingBalance = IERC20(asset).balanceOf(_proxy());
         uint256 vaultStartingBalance = IERC20(asset).balanceOf(vault);
 
         // Total amount to transfer to the vault for the withdrawal
@@ -191,7 +208,7 @@ abstract contract PermissionlessWithdrawals is
         // Step 3: Withdraw the assets from the venue if necessary
 
         if (assetsToWithdraw > 0) {
-            _withdrawFromVenue(venueType, venue, asset, proxy, assetsToWithdraw, proxyStartingBalance);
+            _withdrawFromVenue(venueType, venue, asset, _proxy(), assetsToWithdraw, proxyStartingBalance);
         }
 
         // Step 4: Transfer withdrawn assets to the vault if necessary
@@ -213,8 +230,8 @@ abstract contract PermissionlessWithdrawals is
 
         uint256 recipientAmount = fullAmount - vaultConfig_.penaltyAmount;
 
-        IERC20(asset).safeTransfer(penaltyRecipient, vaultConfig_.penaltyAmount);
-        IERC20(asset).safeTransfer(recipient,        recipientAmount);
+        IERC20(asset).safeTransfer($.penaltyRecipient, vaultConfig_.penaltyAmount);
+        IERC20(asset).safeTransfer(recipient,          recipientAmount);
 
         emit PermissionlessWithdraw(
             vault,
@@ -223,6 +240,30 @@ abstract contract PermissionlessWithdrawals is
             vaultConfig_.penaltyAmount,
             recipientAmount
         );
+    }
+
+    /**********************************************************************************************/
+    /*** View/Pure functions                                                                    ***/
+    /**********************************************************************************************/
+
+    function getController() public view override returns (address) {
+        return _getPermissionlessWithdrawalsStorage().controller;
+    }
+
+    function getImplementation() public view override returns (address) {
+        return ERC1967Utils.getImplementation();
+    }
+
+    function getPenaltyRecipient() public view override returns (address) {
+        return _getPermissionlessWithdrawalsStorage().penaltyRecipient;
+    }
+
+    function getVaultConfig(address vault) public view override returns (VaultConfig memory) {
+        return _getPermissionlessWithdrawalsStorage().vaultConfig[vault];
+    }
+
+    function getVenueType(address vault, address venue) public view override returns (VenueType) {
+        return _getPermissionlessWithdrawalsStorage().venueTypes[vault][venue];
     }
 
     /**********************************************************************************************/
