@@ -42,8 +42,6 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
 
     function _mockWithdrawAaveReturnsZero(address aToken, uint256 amount) internal virtual;
 
-    function _expectRateLimitExceededRevert() internal virtual;
-
     /**********************************************************************************************/
     /*** initialize                                                                             ***/
     /**********************************************************************************************/
@@ -492,7 +490,7 @@ abstract contract PermissionlessWithdrawalsTestBase is ForkTestBase {
         // Simulate the SLL moving funds out of the vault.
         deal(address(USDC), address(spUSDCVault), 0);
 
-        _expectRateLimitExceededRevert();
+        vm.expectRevert("RateLimits/rate-limit-exceeded");
         vm.prank(user);
         withdrawals.permissionlessWithdraw(address(spUSDCVault), Ethereum.PSM, recipient, shares);
     }

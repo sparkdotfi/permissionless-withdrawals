@@ -80,10 +80,6 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
         );
     }
 
-    function _expectRateLimitExceededRevert() internal override {
-        vm.expectRevert("RateLimits/rate-limit-exceeded");
-    }
-
     function _expectWithdrawAaveCall(address aToken, uint256 amount, uint64 count) internal override {
         vm.expectCall(
             controller,
