@@ -44,23 +44,21 @@ and the proceeds are split between the recipient and the penalty recipient.
 
 ## Quick Start
 
+Initialize submodules:
+
+```bash
+git submodule update --init --recursive
+```
+
 Build:
 
 ```bash
 forge build
 ```
 
-Run the unit tests (no network needed):
+The test suite is fork only and requires a mainnet archive RPC:
 
 ```bash
-forge test --match-path "test/unit/*"
-```
-
-Run the full suite, including the mainnet fork tests. These require a mainnet archive RPC; set
-`MAINNET_API_KEY` (the `mainnet` endpoint is configured in `foundry.toml`):
-
-```bash
-export MAINNET_API_KEY=<your-key>
 forge test
 ```
 

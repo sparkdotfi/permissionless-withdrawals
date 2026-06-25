@@ -76,8 +76,10 @@ abstract contract PermissionlessWithdrawals is
     /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
+    /// @inheritdoc IPermissionlessWithdrawals
     string  public constant override VERSION = "1.0.0";
 
+    /// @inheritdoc IPermissionlessWithdrawals
     uint256 public constant override USDS_CONVERSION_PRECISION = 1e12;
 
     /**********************************************************************************************/
@@ -110,10 +112,11 @@ abstract contract PermissionlessWithdrawals is
     /*** Admin functions                                                                        ***/
     /**********************************************************************************************/
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function updateVaultConfig(
-        address   vault,
-        uint256   penaltyAmount,
-        bool      whitelisted
+        address vault,
+        uint256 penaltyAmount,
+        bool    whitelisted
     )
         external
         override
@@ -131,6 +134,7 @@ abstract contract PermissionlessWithdrawals is
         emit VaultConfigUpdated(vault, penaltyAmount, whitelisted);
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function setVenueType(
         address   vault,
         address   venue,
@@ -149,6 +153,7 @@ abstract contract PermissionlessWithdrawals is
         emit VenueTypeSet(vault, venue, venueType);
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function setPenaltyRecipient(address penaltyRecipient_)
         external
         override
@@ -166,6 +171,7 @@ abstract contract PermissionlessWithdrawals is
     /*** External functions                                                                     ***/
     /**********************************************************************************************/
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function permissionlessWithdraw(
         address vault,
         address venue,
@@ -246,22 +252,27 @@ abstract contract PermissionlessWithdrawals is
     /*** View/Pure functions                                                                    ***/
     /**********************************************************************************************/
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function getController() public view override returns (address) {
         return _getPermissionlessWithdrawalsStorage().controller;
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function getImplementation() public view override returns (address) {
         return ERC1967Utils.getImplementation();
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function getPenaltyRecipient() public view override returns (address) {
         return _getPermissionlessWithdrawalsStorage().penaltyRecipient;
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function getVaultConfig(address vault) public view override returns (VaultConfig memory) {
         return _getPermissionlessWithdrawalsStorage().vaultConfig[vault];
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
     function getVenueType(address vault, address venue) public view override returns (VenueType) {
         return _getPermissionlessWithdrawalsStorage().venueTypes[vault][venue];
     }

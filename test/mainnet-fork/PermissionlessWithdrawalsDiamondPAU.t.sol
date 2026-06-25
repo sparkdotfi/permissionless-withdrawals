@@ -21,7 +21,7 @@ interface IPAUFactoryLike {
 
 }
 
-interface IControllerLike {
+interface IDiamondControllerLike {
 
     function updateIntegrations(bytes32[] calldata ids) external;
 
@@ -128,9 +128,9 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
         vm.startPrank(Ethereum.SPARK_PROXY);
 
-        IControllerLike(controller_).updateIntegrations(ids);
+        IDiamondControllerLike(controller_).updateIntegrations(ids);
 
-        IControllerLike(controller_).usds_setVault(Ethereum.ALLOCATOR_VAULT);
+        IDiamondControllerLike(controller_).usds_setVault(Ethereum.ALLOCATOR_VAULT);
 
         IControllerRoleLike(Ethereum.ALM_PROXY).grantRole(
             IControllerRoleLike(Ethereum.ALM_PROXY).CONTROLLER(),
@@ -141,7 +141,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
             controller_
         );
 
-        _configureRateLimits(IControllerLike(controller_), IRateLimitsLike(Ethereum.ALM_RATE_LIMITS));
+        _configureRateLimits(IDiamondControllerLike(controller_), IRateLimitsLike(Ethereum.ALM_RATE_LIMITS));
 
         vm.stopPrank();
 
@@ -170,7 +170,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     }
 
     // Sets every rate-limit key the stories consume. Everything is unlimited except the PSM.
-    function _configureRateLimits(IControllerLike c, IRateLimitsLike rl) internal {
+    function _configureRateLimits(IDiamondControllerLike c, IRateLimitsLike rl) internal {
         rl.setUnlimitedRateLimitData(c.aave_getWithdrawRateLimitKey(SparkLend.WETH_SPTOKEN, IAaveTokenLike(SparkLend.WETH_SPTOKEN).POOL()));
         rl.setUnlimitedRateLimitData(c.aave_getWithdrawRateLimitKey(SparkLend.USDT_SPTOKEN, IAaveTokenLike(SparkLend.USDT_SPTOKEN).POOL()));
         rl.setUnlimitedRateLimitData(c.aave_getWithdrawRateLimitKey(SparkLend.USDC_SPTOKEN, IAaveTokenLike(SparkLend.USDC_SPTOKEN).POOL()));
@@ -192,7 +192,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     function _mockWithdrawAaveReturnsZero(address aToken, uint256 amount) internal override {
         vm.mockCall(
             controller,
-            abi.encodeCall(IControllerLike.aave_withdraw, (aToken, amount)),
+            abi.encodeCall(IDiamondControllerLike.aave_withdraw, (aToken, amount)),
             abi.encode(uint256(0))
         );
     }
@@ -204,7 +204,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     function _expectWithdrawAaveCall(address aToken, uint256 amount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IControllerLike.aave_withdraw, (aToken, amount)),
+            abi.encodeCall(IDiamondControllerLike.aave_withdraw, (aToken, amount)),
             count
         );
     }
@@ -212,7 +212,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     function _expectWithdrawERC4626Call(address token, uint256 amount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IControllerLike.erc4626_withdraw, (token, amount, type(uint256).max)),
+            abi.encodeCall(IDiamondControllerLike.erc4626_withdraw, (token, amount, type(uint256).max)),
             count
         );
     }
@@ -220,7 +220,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     function _expectMintUSDSCall(uint256 usdsAmount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IControllerLike.usds_mint, (usdsAmount)),
+            abi.encodeCall(IDiamondControllerLike.usds_mint, (usdsAmount)),
             count
         );
     }
@@ -228,7 +228,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     function _expectSwapUSDSToUSDCCall(uint256 usdcAmount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IControllerLike.psm_swapUSDSToUSDC, (usdcAmount)),
+            abi.encodeCall(IDiamondControllerLike.psm_swapUSDSToUSDC, (usdcAmount)),
             count
         );
     }
@@ -239,7 +239,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     {
         vm.expectCall(
             controller,
-            abi.encodeCall(IControllerLike.transferAsset_transfer, (asset_, destination, amount)),
+            abi.encodeCall(IDiamondControllerLike.transferAsset_transfer, (asset_, destination, amount)),
             count
         );
     }

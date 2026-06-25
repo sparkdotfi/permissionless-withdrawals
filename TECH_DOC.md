@@ -46,11 +46,16 @@ controller interactions (`_proxy`, `_transferAsset`, `_withdrawAave`, `_withdraw
 `PermissionlessWithdrawalsDiamondPAU` each implement only those hooks against their controller's ABI.
 The same test suite runs against both, so behaviour stays identical across versions.
 
+The controller is fixed at `initialize` and has no setter. Switching implementations is therefore a
+separate deployment, not an in-place upgrade. Initially the `PermissionlessWithdrawalsLegacyPAU` will be deployed, then  `PermissionlessWithdrawalsDiamondPAU` separately once the diamond controller is live.
+
 ### Upgradeability (UUPS), admin is Spark governance
 
 The contract is UUPS upgradeable. This is a deliberately defensive choice rather than a feature for
 iteration. If funds ever become stuck or a bug is discovered, governance can ship an upgrade to
-recover the situation instead of being forced to redeploy and migrate. Upgrade authority is held by
+recover the situation instead of being forced to redeploy and migrate. UUPS exists for bug recovery
+only, an upgrade does not change the controller, which stays fixed from `initialize`. Upgrade
+authority is held by
 `DEFAULT_ADMIN_ROLE`, set to `SPARK_PROXY` (Spark governance). Using the same governance address that
 already controls the ALM system keeps the trust surface consistent and robust, with no separate
 upgrade key to protect.
@@ -63,11 +68,17 @@ When withdrawing from an ERC4626 venue, the contract calls the controller with
 - The caller is permissionless and untrusted, so it cannot be allowed to pass a slippage value.
 - Burdening the admin with a per call bound is impractical and still would not protect against a
   manipulated venue between blocks.
-- The controller already operates under the assumption that any relayer or allocator may be
-  malicious and pass arbitrary amounts, and it protects against this with its own per venue slippage
-  configuration and rate limits. This contract holds exactly that relayer role, so it inherits the
-  same trust model. The controller is the single source of slippage protection for venue
-  withdrawals, and passing `max` simply defers to it.
+- Unlike the controller's deposit and redeem paths, the ERC4626 withdraw path applies no
+  `maxExchangeRate` check. The only protection on this path is the per venue withdraw rate limit.
+  Passing `maxSharesIn = max` is therefore a deliberate accepted risk choice, acceptable because
+  venues are curated and whitelisted by the admin.
+
+### PSM conversion assumes a USDC gem
+
+The PSM path mints USDS and swaps it to the gem using a hardcoded `USDS_CONVERSION_PRECISION = 1e12`,
+which assumes a 6 decimal gem against 18 decimal USDS. This is safe only because the PSM gem is
+permanently USDC. The controller reads this factor from the PSM at call time, but this contract
+relies on the invariant rather than reading it.
 
 ### Venue whitelisting and the incorrect venue guard
 
@@ -90,10 +101,20 @@ Each vault has a fixed penalty deducted from the redeemed assets and sent to the
 It compensates for the cost of force unwinding ALM liquidity and keeps the permissionless path a
 backup rather than the default withdrawal route.
 
+## Known Limitations
+
+- Shared rate-limit budget. The backup path draws down the SLL's shared rate limits (the global
+  `LIMIT_USDS_TO_USDC` and the per venue withdraw keys). It can therefore be exhausted by normal SLL
+  activity or griefed through repeated calls. The fixed penalty per call and the limits regenerating
+  over time are the mitigations.
+
 ## Trust Assumptions
 
 - `DEFAULT_ADMIN_ROLE` (Spark governance, `SPARK_PROXY`): fully trusted. Whitelists vaults and
   venues, sets penalties, and authorizes upgrades.
+- Supported assets must be standard, non-rebasing, non-fee-on-transfer ERC-20s. USDT is in scope and
+  has a dormant fee switch that, if enabled, would break the exact penalty plus recipient amount
+  split.
 - MainnetController, ALMProxy, and RateLimits: trusted to custody funds and enforce rate limits and
   slippage. This contract must hold the controller's relayer role (legacy `RELAYER`, diamond
   `ALLOCATOR_ROLE`), granted by a governance spell, in order to drive the ALMProxy.

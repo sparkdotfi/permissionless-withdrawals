@@ -3,7 +3,7 @@ pragma solidity ^0.8.34;
 
 import { PermissionlessWithdrawals } from "./PermissionlessWithdrawals.sol";
 
-interface IMainnetControllerDiamond {
+interface IDiamondControllerLike {
 
     function aave_withdraw(address aToken, uint256 amount)
         external
@@ -26,30 +26,30 @@ interface IMainnetControllerDiamond {
 contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
 
     function _proxy() internal view override returns (address) {
-        return IMainnetControllerDiamond(getController()).proxy();
+        return IDiamondControllerLike(getController()).proxy();
     }
 
     function _transferAsset(address asset, address destination, uint256 amount)
         internal
         override
     {
-        IMainnetControllerDiamond(getController()).transferAsset_transfer(asset, destination, amount);
+        IDiamondControllerLike(getController()).transferAsset_transfer(asset, destination, amount);
     }
 
     function _withdrawAave(address aToken, uint256 amount) internal override {
-        IMainnetControllerDiamond(getController()).aave_withdraw(aToken, amount);
+        IDiamondControllerLike(getController()).aave_withdraw(aToken, amount);
     }
 
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal override {
-        IMainnetControllerDiamond(getController()).erc4626_withdraw(token, amount, maxSharesIn);
+        IDiamondControllerLike(getController()).erc4626_withdraw(token, amount, maxSharesIn);
     }
 
     function _mintUSDS(uint256 usdsAmount) internal override {
-        IMainnetControllerDiamond(getController()).usds_mint(usdsAmount);
+        IDiamondControllerLike(getController()).usds_mint(usdsAmount);
     }
 
     function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        IMainnetControllerDiamond(getController()).psm_swapUSDSToUSDC(usdcAmount);
+        IDiamondControllerLike(getController()).psm_swapUSDSToUSDC(usdcAmount);
     }
 
 }

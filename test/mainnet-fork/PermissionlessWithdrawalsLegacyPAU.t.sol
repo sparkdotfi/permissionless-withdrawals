@@ -8,7 +8,7 @@ import { PermissionlessWithdrawalsLegacyPAU } from "../../src/PermissionlessWith
 
 import { PermissionlessWithdrawalsTestBase } from "./PermissionlessWithdrawalsTestBase.t.sol";
 
-interface IMainnetControllerLike {
+interface ILegacyControllerLike {
 
     function grantRole(bytes32 role, address account) external;
 
@@ -49,23 +49,23 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     }
 
     function _proxy() internal view override returns (address) {
-        return IMainnetControllerLike(controller).proxy();
+        return ILegacyControllerLike(controller).proxy();
     }
 
     function _grantRelayerRole(address account) internal override {
-        bytes32 role = IMainnetControllerLike(controller).RELAYER();
+        bytes32 role = ILegacyControllerLike(controller).RELAYER();
 
         vm.prank(admin);
-        IMainnetControllerLike(controller).grantRole(role, account);
+        ILegacyControllerLike(controller).grantRole(role, account);
     }
 
     function _revokeRelayerRole(address account) internal override {
         vm.prank(freezer);
-        IMainnetControllerLike(controller).removeRelayer(account);
+        ILegacyControllerLike(controller).removeRelayer(account);
     }
 
     function _relayerRole() internal view override returns (bytes32) {
-        return IMainnetControllerLike(controller).RELAYER();
+        return ILegacyControllerLike(controller).RELAYER();
     }
 
     /**********************************************************************************************/
@@ -75,7 +75,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     function _mockWithdrawAaveReturnsZero(address aToken, uint256 amount) internal override {
         vm.mockCall(
             controller,
-            abi.encodeCall(IMainnetControllerLike.withdrawAave, (aToken, amount)),
+            abi.encodeCall(ILegacyControllerLike.withdrawAave, (aToken, amount)),
             abi.encode(uint256(0))
         );
     }
@@ -87,7 +87,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     function _expectWithdrawAaveCall(address aToken, uint256 amount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IMainnetControllerLike.withdrawAave, (aToken, amount)),
+            abi.encodeCall(ILegacyControllerLike.withdrawAave, (aToken, amount)),
             count
         );
     }
@@ -95,7 +95,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     function _expectWithdrawERC4626Call(address token, uint256 amount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IMainnetControllerLike.withdrawERC4626, (token, amount, type(uint256).max)),
+            abi.encodeCall(ILegacyControllerLike.withdrawERC4626, (token, amount, type(uint256).max)),
             count
         );
     }
@@ -103,7 +103,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     function _expectMintUSDSCall(uint256 usdsAmount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IMainnetControllerLike.mintUSDS, (usdsAmount)),
+            abi.encodeCall(ILegacyControllerLike.mintUSDS, (usdsAmount)),
             count
         );
     }
@@ -111,7 +111,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     function _expectSwapUSDSToUSDCCall(uint256 usdcAmount, uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IMainnetControllerLike.swapUSDSToUSDC, (usdcAmount)),
+            abi.encodeCall(ILegacyControllerLike.swapUSDSToUSDC, (usdcAmount)),
             count
         );
     }
@@ -122,7 +122,7 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     {
         vm.expectCall(
             controller,
-            abi.encodeCall(IMainnetControllerLike.transferAsset, (asset_, destination, amount)),
+            abi.encodeCall(ILegacyControllerLike.transferAsset, (asset_, destination, amount)),
             count
         );
     }

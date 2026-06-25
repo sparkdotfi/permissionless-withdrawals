@@ -3,7 +3,7 @@ pragma solidity ^0.8.34;
 
 import { PermissionlessWithdrawals } from "./PermissionlessWithdrawals.sol";
 
-interface IMainnetControllerLegacy {
+interface ILegacyControllerLike {
 
     function mintUSDS(uint256 usdsAmount) external;
 
@@ -22,30 +22,30 @@ interface IMainnetControllerLegacy {
 contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
 
     function _proxy() internal view override returns (address) {
-        return IMainnetControllerLegacy(getController()).proxy();
+        return ILegacyControllerLike(getController()).proxy();
     }
 
     function _transferAsset(address asset, address destination, uint256 amount)
         internal
         override
     {
-        IMainnetControllerLegacy(getController()).transferAsset(asset, destination, amount);
+        ILegacyControllerLike(getController()).transferAsset(asset, destination, amount);
     }
 
     function _withdrawAave(address aToken, uint256 amount) internal override {
-        IMainnetControllerLegacy(getController()).withdrawAave(aToken, amount);
+        ILegacyControllerLike(getController()).withdrawAave(aToken, amount);
     }
 
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal override {
-        IMainnetControllerLegacy(getController()).withdrawERC4626(token, amount, maxSharesIn);
+        ILegacyControllerLike(getController()).withdrawERC4626(token, amount, maxSharesIn);
     }
 
     function _mintUSDS(uint256 usdsAmount) internal override {
-        IMainnetControllerLegacy(getController()).mintUSDS(usdsAmount);
+        ILegacyControllerLike(getController()).mintUSDS(usdsAmount);
     }
 
     function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        IMainnetControllerLegacy(getController()).swapUSDSToUSDC(usdcAmount);
+        ILegacyControllerLike(getController()).swapUSDSToUSDC(usdcAmount);
     }
 
 }
