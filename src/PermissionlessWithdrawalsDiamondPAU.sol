@@ -5,15 +5,11 @@ import { PermissionlessWithdrawals } from "./PermissionlessWithdrawals.sol";
 
 interface IDiamondControllerLike {
 
-    function aave_withdraw(address aToken, uint256 amount)
-        external
-        returns (uint256 amountWithdrawn);
+    function aave_withdraw(address aToken, uint256 amount) external returns (uint256);
 
     function erc4626_withdraw(address token, uint256 amount, uint256 maxSharesIn)
         external
-        returns (uint256 shares);
-
-    function proxy() external view returns (address proxy);
+        returns (uint256);
 
     function psm_swapUSDSToUSDC(uint256 usdcAmount) external;
 
@@ -25,31 +21,41 @@ interface IDiamondControllerLike {
 
 contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
 
-    function _proxy() internal view override returns (address) {
-        return IDiamondControllerLike(getController()).proxy();
-    }
+    /**********************************************************************************************/
+    /*** Constructor                                                                            ***/
+    /**********************************************************************************************/
+
+    constructor(address admin_, address controller_, address penaltyRecipient_)
+        PermissionlessWithdrawals(admin_, controller_, penaltyRecipient_) {}
+
+    /**********************************************************************************************/
+    /*** Controller Interaction Hooks                                                           ***/
+    /**********************************************************************************************/
 
     function _transferAsset(address asset, address destination, uint256 amount)
         internal
         override
     {
-        IDiamondControllerLike(getController()).transferAsset_transfer(asset, destination, amount);
+        IDiamondControllerLike(controller).transferAsset_transfer(asset, destination, amount);
     }
 
     function _withdrawAave(address aToken, uint256 amount) internal override {
-        IDiamondControllerLike(getController()).aave_withdraw(aToken, amount);
+        IDiamondControllerLike(controller).aave_withdraw(aToken, amount);
     }
 
-    function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal override {
-        IDiamondControllerLike(getController()).erc4626_withdraw(token, amount, maxSharesIn);
+    function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
+        internal
+        override
+    {
+        IDiamondControllerLike(controller).erc4626_withdraw(token, amount, maxSharesIn);
     }
 
     function _mintUSDS(uint256 usdsAmount) internal override {
-        IDiamondControllerLike(getController()).usds_mint(usdsAmount);
+        IDiamondControllerLike(controller).usds_mint(usdsAmount);
     }
 
     function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        IDiamondControllerLike(getController()).psm_swapUSDSToUSDC(usdcAmount);
+        IDiamondControllerLike(controller).psm_swapUSDSToUSDC(usdcAmount);
     }
 
 }

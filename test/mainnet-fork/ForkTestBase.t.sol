@@ -11,7 +11,8 @@ import { Ethereum }  from "../../lib/spark-address-registry/src/Ethereum.sol";
 import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
-import { PermissionlessWithdrawals }  from "../../src/PermissionlessWithdrawals.sol";
+
+import { PermissionlessWithdrawals } from "../../src/PermissionlessWithdrawals.sol";
 
 interface ISparkVaultLike {
 
