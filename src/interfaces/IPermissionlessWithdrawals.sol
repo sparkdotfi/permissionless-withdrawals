@@ -204,18 +204,6 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      */
     function recoverERC721(address token, address recipient, uint256 tokenId) external payable;
 
-    /**
-     *  @notice Recovers ERC1155 tokens stuck in this contract.
-     *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
-     *  @dev    Reverts if token or recipient is zero. Transfers the specified token to the recipient.
-     *  @param  token     Address of the token to recover.
-     *  @param  recipient Address that receives the token.
-     *  @param  tokenId   The ID of the token to recover.
-     *  @param  amount    The amount of the token to recover.
-     */
-    function recoverERC1155(address token, address recipient, uint256 tokenId, uint256 amount)
-        external;
-
     /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
     /**********************************************************************************************/

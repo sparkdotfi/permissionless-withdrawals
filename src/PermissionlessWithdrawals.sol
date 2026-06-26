@@ -240,19 +240,6 @@ abstract contract PermissionlessWithdrawals is
         IERC721Like(token).safeTransferFrom{value: msg.value}(address(this), recipient, tokenId);
     }
 
-    /// @inheritdoc IPermissionlessWithdrawals
-    function recoverERC1155(address token, address recipient, uint256 tokenId, uint256 amount)
-        external
-        override
-        nonReentrant
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        require(token != address(0),     ZeroTokenAddress());
-        require(recipient != address(0), ZeroRecipientAddress());
-
-        IERC1155Like(token).safeTransferFrom(address(this), recipient, tokenId, amount, "");
-    }
-
     /**********************************************************************************************/
     /*** External Interactive Functions                                                         ***/
     /**********************************************************************************************/
