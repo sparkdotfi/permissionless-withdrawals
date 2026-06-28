@@ -54,11 +54,11 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     error InsufficientAssetsToCoverPenalty(uint256 required, uint256 available);
 
     /**
-     *  @notice Thrown when a venue returns less liquidity than was requested.
-     *  @param  required  The amount of assets requested from the venue.
-     *  @param  available The amount of assets actually received.
+     *  @notice Thrown when the ALM Proxy has insufficient assets to send to the vault.
+     *  @param  required  The amount of assets requested.
+     *  @param  available The amount of assets actually held by the ALM proxy.
      */
-    error InsufficientVenueLiquidity(uint256 required, uint256 available);
+    error InsufficientBalance(uint256 required, uint256 available);
 
     /// @notice Thrown when the ETH transfer to the recipient fails.
     error TransferETHFailed();

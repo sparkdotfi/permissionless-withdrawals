@@ -46,19 +46,6 @@ interface IERC721Like {
 
 }
 
-interface IERC1155Like {
-
-    function safeTransferFrom(
-        address          from,
-        address          to,
-        uint256          id,
-        uint256          amount,
-        bytes   calldata data
-    )
-        external;
-
-}
-
 interface IERC4626Like {
 
     function redeem(uint256 shares, address receiver, address owner)
@@ -220,7 +207,7 @@ abstract contract PermissionlessWithdrawals is
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(token != address(0),     ZeroTokenAddress());
+        require(token     != address(0), ZeroTokenAddress());
         require(recipient != address(0), ZeroRecipientAddress());
 
         IERC20(token).safeTransfer(recipient, IERC20Like(token).balanceOf(address(this)));
@@ -234,7 +221,7 @@ abstract contract PermissionlessWithdrawals is
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(token != address(0),     ZeroTokenAddress());
+        require(token     != address(0), ZeroTokenAddress());
         require(recipient != address(0), ZeroRecipientAddress());
 
         IERC721Like(token).safeTransferFrom{value: msg.value}(address(this), recipient, tokenId);
@@ -250,15 +237,17 @@ abstract contract PermissionlessWithdrawals is
         override
         nonReentrant
     {
-        _revertIfControllerProxyMismatch();
+        // Step 1: Validation.
 
-        // Step 1: Validate the vault, venue and recipient.
+        require(vault     != address(0), ZeroVaultAddress());
+        require(recipient != address(0), ZeroRecipientAddress());
+        require(shares    != 0,          ZeroShares());
+
+        _revertIfControllerProxyMismatch();
 
         VaultConfig storage vaultConfig = _vaultConfigs[vault];
 
         require(vaultConfig.whitelisted, VaultNotWhitelisted());
-        require(recipient != address(0), ZeroRecipientAddress());
-        require(shares != 0,             ZeroShares());
 
         // Step 2: Calculate additional amount needed for user withdrawal.
 
@@ -282,22 +271,15 @@ abstract contract PermissionlessWithdrawals is
 
         if (assetsToWithdraw > 0) {
             _withdrawFromVenue(vault, venue, assetsToWithdraw);
-
-            uint256 amountWithdrawn = IERC20Like(asset).balanceOf(proxy) - proxyStartingBalance;
-
-            // TODO: It is unclear how this can happen, and if it can, does it really mean that
-            //       the venue lacks liquidity, or is there something else at play? Perhaps a
-            //       a rounding issue? Perhaps the "liquidity check" should happen in
-            //       `_transferAsset`, and with a different error name.
-            require(
-                amountWithdrawn >= assetsToWithdraw,
-                InsufficientVenueLiquidity(assetsToWithdraw, amountWithdrawn)
-            );
         }
 
         // Step 4: Transfer withdrawn assets to the vault if necessary.
 
         if (assetsToTransfer > 0) {
+            uint256 balance = IERC20Like(asset).balanceOf(proxy);
+
+            require(balance >= assetsToTransfer, InsufficientBalance(assetsToTransfer, balance));
+
             _transferAsset(asset, vault, assetsToTransfer);
         }
 

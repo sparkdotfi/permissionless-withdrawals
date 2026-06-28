@@ -3,7 +3,6 @@ pragma solidity ^0.8.34;
 
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { PermissionlessWithdrawals }         from "../../src/PermissionlessWithdrawals.sol";
 import { PermissionlessWithdrawalsLegacyPAU } from "../../src/PermissionlessWithdrawalsLegacyPAU.sol";
 
 import { PermissionlessWithdrawalsTestBase } from "./PermissionlessWithdrawalsTestBase.t.sol";
@@ -36,16 +35,22 @@ interface ILegacyControllerLike {
 // and PermissionlessWithdrawalsLegacyPAU.
 contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawalsTestBase {
 
+    function setUp() public override {
+        controller = Ethereum.ALM_CONTROLLER;
+
+        super.setUp();
+    }
+
     /**********************************************************************************************/
     /*** Deploy and role hooks                                                                  ***/
     /**********************************************************************************************/
 
-    function _deployImplementation() internal override returns (PermissionlessWithdrawals) {
-        return new PermissionlessWithdrawalsLegacyPAU();
-    }
-
-    function _controllerAddress() internal override returns (address) {
-        return Ethereum.ALM_CONTROLLER;
+    function _deployWithdrawals(address admin_, address controller_, address penaltyRecipient_)
+        internal
+        override
+        returns (address)
+    {
+        return address(new PermissionlessWithdrawalsLegacyPAU(admin_, controller_, penaltyRecipient_));
     }
 
     function _proxy() internal view override returns (address) {
