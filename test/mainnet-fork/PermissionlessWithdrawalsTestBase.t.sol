@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
@@ -275,6 +274,13 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _deployWithdrawals(admin, controller, address(0));
     }
 
+    function test_constructor_controllerProxyMismatch() external {
+        _revokeController();
+
+        vm.expectRevert(IPermissionlessWithdrawals.ControllerProxyMismatch.selector);
+        _deployWithdrawals(admin, controller, penaltyRecipient);
+    }
+
     function test_constructor() external {
         IPermissionlessWithdrawals newWithdrawals = IPermissionlessWithdrawals(_deployWithdrawals(admin, controller, penaltyRecipient));
 
@@ -517,7 +523,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
             uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
 
-        // Resetting the type of the venue the venue to NONE (disabled).
+        // Resetting the type of the venue to NONE (disabled).
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VenueTypeSet(
@@ -601,16 +607,30 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         withdrawals.recoverETH(address(0));
     }
 
-    function test_recoverETH() external {
-        uint256 amount = 1e18;
+    function test_recoverETH_transferETHFailed() external {
+        uint256 amount = 1 ether;
 
         deal(address(withdrawals), amount);
+
+        vm.mockCallRevert(recipient, amount, new bytes(0), new bytes(0));
+
+        vm.expectRevert(IPermissionlessWithdrawals.TransferETHFailed.selector);
+        vm.prank(admin);
+        withdrawals.recoverETH(recipient);
+    }
+
+    function test_recoverETH() external {
+        uint256 amount = 1 ether;
+
+        deal(address(withdrawals), amount);
+
+        assertEq(recipient.balance, 0);
 
         vm.prank(admin);
         withdrawals.recoverETH(recipient);
 
         assertEq(address(withdrawals).balance, 0);
-        assertEq(address(recipient).balance,   amount);
+        assertEq(recipient.balance,            amount);
     }
 
     /**********************************************************************************************/
@@ -649,6 +669,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 amount = 1e18;
 
         deal(WETH, address(withdrawals), amount);
+
+        assertEq(IERC20Like(WETH).balanceOf(recipient), 0);
 
         vm.prank(admin);
         withdrawals.recoverERC20(WETH, recipient);
@@ -1854,7 +1876,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Simulate the SLL having moved all of the vault's idle into the venues.
         deal(USDC, SP_USDC_VAULT, 0);
-        deal(USDC, proxy,                0);
+        deal(USDC, proxy,         0);
 
         _assertBalances({
             vault                  : SP_USDC_VAULT,

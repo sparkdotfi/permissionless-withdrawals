@@ -84,15 +84,15 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     /// @inheritdoc IPermissionlessWithdrawals
-    address public immutable controller;
+    address public immutable override controller;
 
     /// @inheritdoc IPermissionlessWithdrawals
-    address public immutable proxy;
+    address public immutable override proxy;
 
     mapping(address vault => VaultConfig config) _vaultConfigs;
 
     /// @inheritdoc IPermissionlessWithdrawals
-    address public penaltyRecipient;
+    address public override penaltyRecipient;
 
     /**********************************************************************************************/
     /*** Constructor                                                                            ***/
@@ -128,10 +128,11 @@ abstract contract PermissionlessWithdrawals is
 
         VaultConfig storage vaultConfig = _vaultConfigs[vault];
 
-        vaultConfig.penaltyAmount = penaltyAmount;
-        vaultConfig.whitelisted   = whitelisted;
-
-        emit VaultConfigSet(vault, penaltyAmount, whitelisted);
+        emit VaultConfigSet(
+            vault,
+            vaultConfig.penaltyAmount = penaltyAmount,
+            vaultConfig.whitelisted   = whitelisted
+        );
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
@@ -163,9 +164,7 @@ abstract contract PermissionlessWithdrawals is
             IncorrectVenue()
         );
 
-        _vaultConfigs[vault].venueTypes[venue] = venueType;
-
-        emit VenueTypeSet(vault, venue, venueType);
+        emit VenueTypeSet(vault, venue, _vaultConfigs[vault].venueTypes[venue] = venueType);
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
@@ -177,9 +176,7 @@ abstract contract PermissionlessWithdrawals is
     {
         require(recipient != address(0), ZeroPenaltyRecipientAddress());
 
-        penaltyRecipient = recipient;
-
-        emit PenaltyRecipientSet(recipient);
+        emit PenaltyRecipientSet(penaltyRecipient = recipient);
     }
 
     /**********************************************************************************************/
@@ -316,12 +313,22 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function getVaultIsWhitelisted(address vault) external view returns (bool isWhitelisted) {
+    function getVaultIsWhitelisted(address vault)
+        external
+        view
+        override
+        returns (bool isWhitelisted)
+    {
         return _vaultConfigs[vault].whitelisted;
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function getVaultPenaltyAmount(address vault) external view returns (uint256 penaltyAmount) {
+    function getVaultPenaltyAmount(address vault)
+        external
+        view
+        override
+        returns (uint256 penaltyAmount)
+    {
         return _vaultConfigs[vault].penaltyAmount;
     }
 
@@ -329,6 +336,7 @@ abstract contract PermissionlessWithdrawals is
     function getVenueType(address vault, address venue)
         external
         view
+        override
         returns (VenueType venueType)
     {
         return _vaultConfigs[vault].venueTypes[venue];

@@ -147,7 +147,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      *  @notice Updates the configuration for a given vault.
      *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
-     *  @dev    Reverts if penaltyAmount is zero. Overwrites the vault's entire VaultConfig.
+     *  @dev    Reverts if penaltyAmount is zero.
      *  @param  vault         Address of the vault to configure.
      *  @param  penaltyAmount The number of assets to be sent to the penalty recipient.
      *  @param  whitelisted   Whether the vault should be whitelisted.
@@ -221,7 +221,6 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      */
     function permissionlessWithdraw(address vault, address venue, address recipient, uint256 shares)
         external;
-
 
     /**********************************************************************************************/
     /*** Variables                                                                              ***/
