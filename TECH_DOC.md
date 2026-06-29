@@ -40,25 +40,17 @@ venue withdrawal, the top up to the vault, and the recipient and penalty split.
 ### Two controller implementations behind one base
 
 Spark runs two MainnetController versions (a legacy one and the diamond/PAU one) whose function names
-differ. All of the logic above lives once in the abstract `PermissionlessWithdrawals`. The six
-controller interactions (`_proxy`, `_transferAsset`, `_withdrawAave`, `_withdrawERC4626`,
-`_mintUSDS`, `_swapUSDSToUSDC`) are `virtual` hooks. `PermissionlessWithdrawalsLegacyPAU` and
+differ. All of the logic above lives once in the abstract `PermissionlessWithdrawals`. The five
+controller interactions (`_transferAsset`, `_withdrawAave`, `_withdrawERC4626`, `_mintUSDS`,
+`_swapUSDSToUSDC`) are `virtual` hooks. `PermissionlessWithdrawalsLegacyPAU` and
 `PermissionlessWithdrawalsDiamondPAU` each implement only those hooks against their controller's ABI.
 The same test suite runs against both, so behaviour stays identical across versions.
 
-The controller is fixed at `initialize` and has no setter. Switching implementations is therefore a
-separate deployment, not an in-place upgrade. Initially the `PermissionlessWithdrawalsLegacyPAU` will be deployed, then  `PermissionlessWithdrawalsDiamondPAU` separately once the diamond controller is live.
-
-### Upgradeability (UUPS), admin is Spark governance
-
-The contract is UUPS upgradeable. This is a deliberately defensive choice rather than a feature for
-iteration. If funds ever become stuck or a bug is discovered, governance can ship an upgrade to
-recover the situation instead of being forced to redeploy and migrate. UUPS exists for bug recovery
-only, an upgrade does not change the controller, which stays fixed from `initialize`. Upgrade
-authority is held by
-`DEFAULT_ADMIN_ROLE`, set to `SPARK_PROXY` (Spark governance). Using the same governance address that
-already controls the ALM system keeps the trust surface consistent and robust, with no separate
-upgrade key to protect.
+The controller is set once in the constructor as an `immutable` and has no setter. The `proxy` is
+derived from it there too, so neither can change after deployment. Switching implementations is
+therefore a separate deployment, not an in-place upgrade. Initially the
+`PermissionlessWithdrawalsLegacyPAU` will be deployed, then `PermissionlessWithdrawalsDiamondPAU`
+separately once the diamond controller is live.
 
 ### ERC4626 venue slippage delegated to the controller
 
@@ -103,15 +95,28 @@ backup rather than the default withdrawal route.
 
 ## Known Limitations
 
-- Shared rate-limit budget. The backup path draws down the SLL's shared rate limits (the global
-  `LIMIT_USDS_TO_USDC` and the per venue withdraw keys). It can therefore be exhausted by normal SLL
-  activity or griefed through repeated calls. The fixed penalty per call and the limits regenerating
-  over time are the mitigations.
+- Shared rate-limit budget. The backup path draws down the SLL's shared rate limits: the per venue
+  withdraw keys consumed by the step 3 venue withdrawal, plus the per `(asset, vault)`
+  `LIMIT_ASSET_TRANSFER` key consumed by the step 4 top up from the proxy to the vault. The PSM venue
+  is special: a single PSM withdrawal mints then swaps, so it spends two global budgets in one call,
+  the global `LIMIT_USDS_MINT` from the mint and the global `LIMIT_USDS_TO_USDC` from the swap. Any of
+  these can be exhausted by normal SLL activity or griefed through repeated calls, in particular
+  repeated PSM withdrawals can stall unrelated SLL operations that share `LIMIT_USDS_MINT` or
+  `LIMIT_USDS_TO_USDC`. The fixed penalty per call and the limits regenerating over time are the
+  mitigations.
+
+- Per vault transfer limit must be provisioned. The step 4 top up calls
+  `_transferAsset(asset, vault, amount)`, which the controller meters under
+  `makeAddressAddressKey(LIMIT_ASSET_TRANSFER, asset, vault)`. Whitelisting a vault does not by itself
+  make the backup path usable: if that key is left at its default of zero, every call that needs a top
+  up reverts and the path is dead for that vault. The governance spell that whitelists a vault must
+  also raise this rate limit, alongside the relevant venue withdraw keys, high enough to cover the
+  expected backup withdrawals.
 
 ## Trust Assumptions
 
 - `DEFAULT_ADMIN_ROLE` (Spark governance, `SPARK_PROXY`): fully trusted. Whitelists vaults and
-  venues, sets penalties, and authorizes upgrades.
+  venues, sets penalties and penality recipient.
 - Supported assets must be standard, non-rebasing, non-fee-on-transfer ERC-20s. USDT is in scope and
   has a dormant fee switch that, if enabled, would break the exact penalty plus recipient amount
   split.

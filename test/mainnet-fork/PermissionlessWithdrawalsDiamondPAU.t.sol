@@ -6,10 +6,12 @@ import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { Ethereum as SkyPAU } from "../../lib/sky-pau-registry/src/Ethereum.sol";
 
-import { PermissionlessWithdrawals }          from "../../src/PermissionlessWithdrawals.sol";
 import { PermissionlessWithdrawalsDiamondPAU } from "../../src/PermissionlessWithdrawalsDiamondPAU.sol";
 
-import { PermissionlessWithdrawalsTestBase } from "./PermissionlessWithdrawalsTestBase.t.sol";
+import {
+    IALMProxyLike,
+    PermissionlessWithdrawalsTestBase
+} from "./PermissionlessWithdrawalsTestBase.t.sol";
 
 interface IPAUFactoryLike {
 
@@ -65,23 +67,15 @@ interface IAccessControlsLike {
 
 }
 
-interface IControllerRoleLike {
-
-    function CONTROLLER() external view returns (bytes32);
-
-    function grantRole(bytes32 role, address account) external;
-
-}
-
 interface IRateLimitsLike {
 
-    function CONTROLLER() external view returns (bytes32);
-
     function grantRole(bytes32 role, address account) external;
+
+    function setRateLimitData(bytes32 key, uint256 maxAmount, uint256 slope) external;
 
     function setUnlimitedRateLimitData(bytes32 key) external;
 
-    function setRateLimitData(bytes32 key, uint256 maxAmount, uint256 slope) external;
+    function CONTROLLER() external view returns (bytes32);
 
 }
 
@@ -97,21 +91,13 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
     address internal accessControls;
 
-    /**********************************************************************************************/
-    /*** Deploy and role hooks                                                                  ***/
-    /**********************************************************************************************/
-
-    function _deployImplementation() internal override returns (PermissionlessWithdrawals) {
-        return new PermissionlessWithdrawalsDiamondPAU();
-    }
-
-    function _controllerAddress() internal override returns (address) {
+    function setUp() public override {
         IPAUFactoryLike factory = IPAUFactoryLike(SkyPAU.PAU_FACTORY);
 
         // Deploy a fresh AccessControls and Controller pointed at the live ALMProxy and RateLimits.
         accessControls = factory.deployAccessControls(Ethereum.SPARK_PROXY);
 
-        address controller_ = factory.deployController(
+        controller = factory.deployController(
             accessControls,
             Ethereum.ALM_PROXY,
             Ethereum.ALM_RATE_LIMITS
@@ -128,24 +114,36 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
         vm.startPrank(Ethereum.SPARK_PROXY);
 
-        IDiamondControllerLike(controller_).updateIntegrations(ids);
+        IDiamondControllerLike(controller).updateIntegrations(ids);
 
-        IDiamondControllerLike(controller_).usds_setVault(Ethereum.ALLOCATOR_VAULT);
+        IDiamondControllerLike(controller).usds_setVault(Ethereum.ALLOCATOR_VAULT);
 
-        IControllerRoleLike(Ethereum.ALM_PROXY).grantRole(
-            IControllerRoleLike(Ethereum.ALM_PROXY).CONTROLLER(),
-            controller_
+        IALMProxyLike(Ethereum.ALM_PROXY).grantRole(
+            IALMProxyLike(Ethereum.ALM_PROXY).CONTROLLER(),
+            controller
         );
         IRateLimitsLike(Ethereum.ALM_RATE_LIMITS).grantRole(
             IRateLimitsLike(Ethereum.ALM_RATE_LIMITS).CONTROLLER(),
-            controller_
+            controller
         );
 
-        _configureRateLimits(IDiamondControllerLike(controller_), IRateLimitsLike(Ethereum.ALM_RATE_LIMITS));
+        _configureRateLimits(IDiamondControllerLike(controller), IRateLimitsLike(Ethereum.ALM_RATE_LIMITS));
 
         vm.stopPrank();
 
-        return controller_;
+        super.setUp();
+    }
+
+    /**********************************************************************************************/
+    /*** Deploy and role hooks                                                                  ***/
+    /**********************************************************************************************/
+
+    function _deployWithdrawals(address admin_, address controller_, address penaltyRecipient_)
+        internal
+        override
+        returns (address)
+    {
+        return address(new PermissionlessWithdrawalsDiamondPAU(admin_, controller_, penaltyRecipient_));
     }
 
     function _proxy() internal pure override returns (address) {
@@ -177,9 +175,9 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
         rl.setUnlimitedRateLimitData(c.erc4626_getWithdrawRateLimitKey(Ethereum.MORPHO_VAULT_USDC_BC));
 
-        rl.setUnlimitedRateLimitData(c.transferAsset_getTransferRateLimitKey(address(WETH), address(spETHVault)));
-        rl.setUnlimitedRateLimitData(c.transferAsset_getTransferRateLimitKey(address(USDC), address(spUSDCVault)));
-        rl.setUnlimitedRateLimitData(c.transferAsset_getTransferRateLimitKey(address(USDT), address(spUSDTVault)));
+        rl.setUnlimitedRateLimitData(c.transferAsset_getTransferRateLimitKey(WETH, SP_ETH_VAULT));
+        rl.setUnlimitedRateLimitData(c.transferAsset_getTransferRateLimitKey(USDC, SP_USDC_VAULT));
+        rl.setUnlimitedRateLimitData(c.transferAsset_getTransferRateLimitKey(USDT, SP_USDT_VAULT));
 
         rl.setUnlimitedRateLimitData(c.usds_mintRateLimitKey());
         rl.setRateLimitData(c.psm_usdsToUSDCSwapRateLimitKey(), 5_000_000e6, uint256(1_000_000e6) / 4 hours);
