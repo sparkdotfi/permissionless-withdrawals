@@ -11,6 +11,8 @@ import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { IPermissionlessWithdrawals } from "../../src/interfaces/IPermissionlessWithdrawals.sol";
 
+import { MockERC721 } from "../mocks/MockERC721.sol";
+
 interface IALMProxyLike {
 
     function grantRole(bytes32 role, address account) external;
@@ -398,146 +400,113 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     }
 
     function test_setVenueType_incorrectVenue() external {
-        address venue = makeAddr("venue");
-
-        vm.mockCall(
-            venue,
-            abi.encodeWithSelector(IATokenLike.UNDERLYING_ASSET_ADDRESS.selector),
-            abi.encode(USDT)
-        );
+        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
+        vm.prank(admin);
+        withdrawals.setVenueType(SP_ETH_VAULT, Ethereum.ATOKEN_CORE_USDC, IPermissionlessWithdrawals.VenueType.AAVE);
 
         vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.AAVE);
-
-        vm.mockCall(
-            venue,
-            abi.encodeWithSelector(IERC4626Like.asset.selector),
-            abi.encode(USDT)
-        );
+        withdrawals.setVenueType(SP_ETH_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.ERC4626);
-
-        vm.mockCall(
-            venue,
-            abi.encodeWithSelector(IPSMLike.gem.selector),
-            abi.encode(USDT)
-        );
-
-        vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
-        vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.PSM);
+        withdrawals.setVenueType(SP_ETH_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.PSM);
     }
 
     function test_setVenueType() external {
-        address venue = makeAddr("venue");
+        // Setting the type of the venue to AAVE.
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, venue)),
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC)),
             uint256(IPermissionlessWithdrawals.VenueType.NONE)
         );
 
-        // Setting the type of the venue to AAVE.
-
         vm.expectCall(
-            venue,
+            Ethereum.ATOKEN_CORE_USDC,
             abi.encodeWithSelector(IATokenLike.UNDERLYING_ASSET_ADDRESS.selector)
-        );
-
-        vm.mockCall(
-            venue,
-            abi.encodeWithSelector(IATokenLike.UNDERLYING_ASSET_ADDRESS.selector),
-            abi.encode(USDC)
         );
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VenueTypeSet(
             SP_USDC_VAULT,
-            venue,
+            Ethereum.ATOKEN_CORE_USDC,
             IPermissionlessWithdrawals.VenueType.AAVE
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC, IPermissionlessWithdrawals.VenueType.AAVE);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, venue)),
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC)),
             uint256(IPermissionlessWithdrawals.VenueType.AAVE)
         );
 
         // Setting the type of the venue to ERC4626.
 
-        vm.expectCall(
-            venue,
-            abi.encodeWithSelector(IERC4626Like.asset.selector)
+        assertEq(
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC)),
+            uint256(IPermissionlessWithdrawals.VenueType.NONE)
         );
 
-        vm.mockCall(
-            venue,
-            abi.encodeWithSelector(IERC4626Like.asset.selector),
-            abi.encode(USDC)
+        vm.expectCall(
+            Ethereum.MORPHO_VAULT_USDC_BC,
+            abi.encodeWithSelector(IERC4626Like.asset.selector)
         );
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VenueTypeSet(
             SP_USDC_VAULT,
-            venue,
+            Ethereum.MORPHO_VAULT_USDC_BC,
             IPermissionlessWithdrawals.VenueType.ERC4626
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, venue)),
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC)),
             uint256(IPermissionlessWithdrawals.VenueType.ERC4626)
-        );
-
-        // Setting the type of the venue to PSM.
-
-        vm.expectCall(
-            venue,
-            abi.encodeWithSelector(IPSMLike.gem.selector)
-        );
-
-        vm.mockCall(
-            venue,
-            abi.encodeWithSelector(IPSMLike.gem.selector),
-            abi.encode(USDC)
-        );
-
-        vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueTypeSet(
-            SP_USDC_VAULT,
-            venue,
-            IPermissionlessWithdrawals.VenueType.PSM
-        );
-
-        vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.PSM);
-
-        assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, venue)),
-            uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
 
         // Resetting the type of the venue to NONE (disabled).
 
+        assertEq(
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
+            uint256(IPermissionlessWithdrawals.VenueType.PSM)
+        );
+
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.VenueTypeSet(
             SP_USDC_VAULT,
-            venue,
+            Ethereum.PSM,
             IPermissionlessWithdrawals.VenueType.NONE
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, venue, IPermissionlessWithdrawals.VenueType.NONE);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.NONE);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, venue)),
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
             uint256(IPermissionlessWithdrawals.VenueType.NONE)
+        );
+
+        // Setting the type of the venue to PSM.
+
+        vm.expectCall(Ethereum.PSM, abi.encodeWithSelector(IPSMLike.gem.selector));
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.VenueTypeSet(
+            SP_USDC_VAULT,
+            Ethereum.PSM,
+            IPermissionlessWithdrawals.VenueType.PSM
+        );
+
+        vm.prank(admin);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.PSM);
+
+        assertEq(
+            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
+            uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
     }
 
@@ -714,49 +683,45 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     }
 
     function test_recoverERC721_withoutValue() external {
-        address token = makeAddr("token");
+        MockERC721 token = new MockERC721();
 
         uint256 tokenId = 1;
 
+        token.mint(address(withdrawals), tokenId);
+        assertEq(token.ownerOf(tokenId), address(withdrawals));
+
         vm.expectCall(
-            token,
+            address(token),
             0,
             abi.encodeWithSelector(IERC721Like.safeTransferFrom.selector, address(withdrawals), recipient, tokenId)
         );
 
-        vm.mockCall(
-            token,
-            0,
-            abi.encodeWithSelector(IERC721Like.safeTransferFrom.selector, address(withdrawals), recipient, tokenId),
-            ""
-        );
-
         vm.prank(admin);
-        withdrawals.recoverERC721(token, recipient, tokenId);
+        withdrawals.recoverERC721(address(token), recipient, tokenId);
+
+        assertEq(token.ownerOf(tokenId), recipient);
     }
 
     function test_recoverERC721_withValue() external {
-        address token = makeAddr("token");
+        MockERC721 token = new MockERC721();
 
         uint256 tokenId = 1;
+
+        token.mint(address(withdrawals), tokenId);
+        assertEq(token.ownerOf(tokenId), address(withdrawals));
 
         deal(admin, 1 ether);
 
         vm.expectCall(
-            token,
+            address(token),
             1 ether,
             abi.encodeWithSelector(IERC721Like.safeTransferFrom.selector, address(withdrawals), recipient, tokenId)
         );
 
-        vm.mockCall(
-            token,
-            1 ether,
-            abi.encodeWithSelector(IERC721Like.safeTransferFrom.selector, address(withdrawals), recipient, tokenId),
-            ""
-        );
-
         vm.prank(admin);
-        withdrawals.recoverERC721{value: 1 ether}(token, recipient, tokenId);
+        withdrawals.recoverERC721{value: 1 ether}(address(token), recipient, tokenId);
+
+        assertEq(token.ownerOf(tokenId), recipient);
     }
 
     /**********************************************************************************************/

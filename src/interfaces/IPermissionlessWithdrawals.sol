@@ -69,10 +69,10 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /// @notice Thrown when the (vault, venue) pair has no venue type set.
     error VenueTypeNotSet();
 
-    /// @notice Thrown when the admin address is zero during initialization.
+    /// @notice Thrown when the admin address is zero during construction.
     error ZeroAdminAddress();
 
-    /// @notice Thrown when the controller address is zero during initialization.
+    /// @notice Thrown when the controller address is zero during construction.
     error ZeroControllerAddress();
 
     /// @notice Thrown when the penalty amount is zero during vault configuration.
@@ -158,6 +158,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      *  @notice Sets the type of a given venue.
      *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      *  @dev    Setting venueType to NONE unsets the (vault, venue) pairing.
+     *          Reverts if the venue type is incorrect.
      *  @param  vault     Address of the vault being configured.
      *  @param  venue     Address of the venue to set the type of.
      *  @param  venueType The type of venue to set.
@@ -168,9 +169,9 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      *  @notice Sets the penalty recipient.
      *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      *  @dev    Reverts if penaltyRecipient is zero.
-     *  @param  penaltyRecipient The address of the penalty recipient.
+     *  @param  recipient The address of the penalty recipient.
      */
-    function setPenaltyRecipient(address penaltyRecipient) external;
+    function setPenaltyRecipient(address recipient) external;
 
     /**********************************************************************************************/
     /*** Asset Recovery Functions                                                               ***/
@@ -195,7 +196,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     function recoverERC20(address token, address recipient) external;
 
     /**
-     *  @notice Recovers ERC721 tokens stuck in this contract.
+     *  @notice Recovers ERC721 tokens stuck in this contract. Payable to cover any fee if needed.
      *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      *  @dev    Reverts if token or recipient is zero. Transfers the specified token to the recipient.
      *  @param  token     Address of the token to recover.
@@ -215,7 +216,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      *          The shortfall is pulled from the venue through the controller using this contract's
      *          relayer role. Reverts if the redeemed assets cannot cover the penalty.
      *  @param  vault     Address of the vault to withdraw from.
-     *  @param  venue     Address of the venue to source the shortfall from.
+     *  @param  venue     Address of the venue to source the shortfall from if necessary.
      *  @param  recipient Address that receives the assets net of the penalty.
      *  @param  shares    The number of vault shares to redeem.
      */
