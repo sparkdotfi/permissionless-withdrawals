@@ -29,7 +29,7 @@ The diagram below traces this flow for both the Diamond and Legacy implementatio
 
 Spark runs two MainnetController versions (a legacy one and the diamond/PAU one) whose function names differ. All of the logic above lives once in the abstract `PermissionlessWithdrawals`. The four controller interactions (`_transferAsset`, `_withdrawAave`, `_withdrawERC4626`, `_withdrawPSM`) are `virtual` hooks. The PSM path is a single `_withdrawPSM` hook that mints USDS and swaps it to the gem internally. `PermissionlessWithdrawalsLegacyPAU` and `PermissionlessWithdrawalsDiamondPAU` each implement only those hooks against their controller's ABI. The same test suite runs against both, so behaviour stays identical across versions.
 
-The controller is set once in the constructor as an `immutable` and has no setter. The `proxy` is derived from it there too, so neither can change after deployment. Switching implementations is therefore a separate deployment, not an in-place upgrade. Initially the\ `PermissionlessWithdrawalsLegacyPAU` will be deployed, then `PermissionlessWithdrawalsDiamondPAU` separately once the diamond controller is live.
+The controller is set once in the constructor as an `immutable` and has no setter. The `proxy` is derived from it there too, so neither can change after deployment. Switching implementations is therefore a separate deployment, not an in-place upgrade. Initially the `PermissionlessWithdrawalsLegacyPAU` will be deployed, then `PermissionlessWithdrawalsDiamondPAU` separately once the diamond controller is live.
 
 ### ERC4626 venue slippage bounded by a per venue ratio
 
