@@ -1955,4 +1955,170 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         });
     }
 
+    /**********************************************************************************************/
+    /*** Fuzz Tests                                                                             ***/
+    /**********************************************************************************************/
+
+    function testFuzz_liquiditySplit(uint256 vaultBalance, uint256 proxyBalance) external {
+        uint256 shares          = 1_000_000e6;
+        uint256 assetsRequested = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 recipientAmount = assetsRequested - SPUSDC_PENALTY_AMOUNT;
+
+        _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
+
+        vaultBalance = bound(vaultBalance, 0, assetsRequested);
+        proxyBalance = bound(proxyBalance, 0, assetsRequested);
+
+        deal(USDC, SP_USDC_VAULT, vaultBalance);
+        deal(USDC, proxy,         proxyBalance);
+
+        uint256 assetsToTransfer = assetsRequested  > vaultBalance ? assetsRequested - vaultBalance  : 0;
+        uint256 assetsToWithdraw = assetsToTransfer > proxyBalance ? assetsToTransfer - proxyBalance : 0;
+
+        _expectMintUSDSCall(assetsToWithdraw > 0 ? 1 : 0);
+        _expectSwapUSDSToUSDCCall(assetsToWithdraw > 0 ? 1 : 0);
+        _expectTransferAssetCall(assetsToTransfer > 0 ? 1 : 0);
+
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.PermissionlessWithdraw(
+            SP_USDC_VAULT,
+            user,
+            recipient,
+            shares,
+            SPUSDC_PENALTY_AMOUNT,
+            recipientAmount
+        );
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_USDC_VAULT, Ethereum.PSM, recipient, shares);
+
+        _assertBalances({
+            vault                  : SP_USDC_VAULT,
+            asset                  : USDC,
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : SPUSDC_PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : proxyBalance - (assetsToTransfer - assetsToWithdraw)
+        });
+    }
+
+    function testFuzz_venueNotReachedWhenLiquiditySufficient(uint256 vaultBalance, uint256 proxyBalance) external {
+        uint256 shares          = 100_000e18;
+        uint256 assetsRequested = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 recipientAmount = assetsRequested - SPETH_PENALTY_AMOUNT;
+
+        _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
+
+        vaultBalance = bound(vaultBalance, 0, assetsRequested);
+        proxyBalance = bound(proxyBalance, 0, assetsRequested);
+
+        deal(WETH, SP_ETH_VAULT, vaultBalance);
+        deal(WETH, proxy,        proxyBalance);
+
+        uint256 assetsToTransfer = assetsRequested  > vaultBalance ? assetsRequested - vaultBalance  : 0;
+        uint256 assetsToWithdraw = assetsToTransfer > proxyBalance ? assetsToTransfer - proxyBalance : 0;
+
+        // Unset the venue so that, if it is ever reached, the withdrawal reverts.
+        vm.prank(admin);
+        withdrawals.setVenueType(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.NONE);
+
+        // The venue withdrawal is reached but unset, so the call reverts before any venue interaction.
+        if (assetsToWithdraw > 0) {
+            vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
+            vm.prank(user);
+            withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
+            return;
+        }
+
+        // No shortfall: the venue is never touched and the withdrawal succeeds.
+
+        _expectTransferAssetCall(assetsToTransfer > 0 ? 1 : 0);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.PermissionlessWithdraw(
+            SP_ETH_VAULT, user, recipient, shares, SPETH_PENALTY_AMOUNT, recipientAmount
+        );
+
+        vm.record();
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
+
+        _assertReentrancyGuardWrittenToTwice();
+
+        _assertBalances({
+            vault                  : SP_ETH_VAULT,
+            asset                  : WETH,
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : SPETH_PENALTY_AMOUNT,
+            vaultAssets            : 0,
+            proxyAssets            : proxyBalance - assetsToTransfer
+        });
+    }
+
+    function testFuzz_penaltyAmount(uint256 penaltyAmount) external {
+        uint256 shares = 10_000e18;
+        uint256 assets = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares); // == redeemed fullAmount
+
+        penaltyAmount = bound(penaltyAmount, 1, assets * 2);
+
+        vm.prank(admin);
+        withdrawals.setVaultConfig(SP_ETH_VAULT, penaltyAmount, true);
+
+        _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
+
+        // The vault alone covers the full amount, so no venue or proxy interaction is needed
+
+        if (penaltyAmount > assets) {
+            // The redeemed assets cannot cover the penalty.
+            vm.expectRevert(abi.encodeWithSelector(
+                IPermissionlessWithdrawals.InsufficientAssetsToCoverPenalty.selector,
+                penaltyAmount,
+                assets
+            ));
+
+            vm.prank(user);
+            withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
+            return;
+        }
+
+        // penaltyAmount <= assets: the withdrawal succeeds (recipient receives zero at the boundary).
+        uint256 recipientAmount = assets - penaltyAmount;
+        uint256 vaultAssets     = IERC20Like(WETH).balanceOf(SP_ETH_VAULT) - assets;
+
+        _expectTransferAssetCall(0); // Vault covers the full amount.
+
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.PermissionlessWithdraw(
+            SP_ETH_VAULT, user, recipient, shares, penaltyAmount, recipientAmount
+        );
+
+        vm.record();
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
+
+        _assertReentrancyGuardWrittenToTwice();
+
+        _assertBalances({
+            vault                  : SP_ETH_VAULT,
+            asset                  : WETH,
+            userShares             : 0,
+            userAllowance          : 0,
+            recipientAssets        : recipientAmount,
+            penaltyRecipientAssets : penaltyAmount,
+            vaultAssets            : vaultAssets,
+            proxyAssets            : 0
+        });
+    }
+
 }
