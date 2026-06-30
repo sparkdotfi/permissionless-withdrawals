@@ -40,9 +40,10 @@ venue withdrawal, the top up to the vault, and the recipient and penalty split.
 ### Two controller implementations behind one base
 
 Spark runs two MainnetController versions (a legacy one and the diamond/PAU one) whose function names
-differ. All of the logic above lives once in the abstract `PermissionlessWithdrawals`. The five
-controller interactions (`_transferAsset`, `_withdrawAave`, `_withdrawERC4626`, `_mintUSDS`,
-`_swapUSDSToUSDC`) are `virtual` hooks. `PermissionlessWithdrawalsLegacyPAU` and
+differ. All of the logic above lives once in the abstract `PermissionlessWithdrawals`. The four
+controller interactions (`_transferAsset`, `_withdrawAave`, `_withdrawERC4626`, `_withdrawPSM`) are
+`virtual` hooks. The PSM path is a single `_withdrawPSM` hook that mints USDS and swaps it to the gem
+internally. `PermissionlessWithdrawalsLegacyPAU` and
 `PermissionlessWithdrawalsDiamondPAU` each implement only those hooks against their controller's ABI.
 The same test suite runs against both, so behaviour stays identical across versions.
 
@@ -52,25 +53,27 @@ therefore a separate deployment, not an in-place upgrade. Initially the
 `PermissionlessWithdrawalsLegacyPAU` will be deployed, then `PermissionlessWithdrawalsDiamondPAU`
 separately once the diamond controller is live.
 
-### ERC4626 venue slippage delegated to the controller
+### ERC4626 venue slippage bounded by a per venue ratio
 
-When withdrawing from an ERC4626 venue, the contract calls the controller with
-`maxSharesIn = type(uint256).max`, placing no slippage bound of its own. This is intentional:
+When withdrawing from an ERC4626 venue, the contract caps the shares burned at
+`maxSharesIn = amount * maxSharesInRatio / 1e18`, with `maxSharesInRatio` set per venue by the admin
+through `setMaxSharesInRatio`. This bounds slippage on the withdraw path, which the controller does
+not guard itself (unlike its deposit and redeem paths, it applies no `maxExchangeRate` check).
 
-- The caller is permissionless and untrusted, so it cannot be allowed to pass a slippage value.
-- Burdening the admin with a per call bound is impractical and still would not protect against a
-  manipulated venue between blocks.
-- Unlike the controller's deposit and redeem paths, the ERC4626 withdraw path applies no
-  `maxExchangeRate` check. The only protection on this path is the per venue withdraw rate limit.
-  Passing `maxSharesIn = max` is therefore a deliberate accepted risk choice, acceptable because
-  venues are curated and whitelisted by the admin.
+- The caller is permissionless and untrusted, so the bound cannot come from the caller. Anchoring it
+  to a per venue admin ratio keeps the caller out of the slippage decision.
+- The ratio must encode both the slippage headroom and the asset to share decimal gap,
+  `10**(shareDecimals - assetDecimals)`. `1e18` is `1:1` only when the decimals match, a 6 decimal
+  asset against an 18 decimal share vault needs `1.1e18 * 1e12` for 10% headroom.
+- The ratio defaults to zero, so an unconfigured venue yields `maxSharesIn = 0` and every withdrawal
+  through it reverts. The path is fail closed, a venue is unusable until its ratio is set.
 
 ### PSM conversion assumes a USDC gem
 
-The PSM path mints USDS and swaps it to the gem using a hardcoded `USDS_CONVERSION_PRECISION = 1e12`,
-which assumes a 6 decimal gem against 18 decimal USDS. This is safe only because the PSM gem is
-permanently USDC. The controller reads this factor from the PSM at call time, but this contract
-relies on the invariant rather than reading it.
+The PSM path mints USDS and swaps it to the gem using a hardcoded `_USDS_CONVERSION_PRECISION = 1e12`
+defined in each concrete implementation, which assumes a 6 decimal gem against 18 decimal USDS. This
+is safe only because the PSM gem is permanently USDC. The controller reads this factor from the PSM
+at call time, but this contract relies on the invariant rather than reading it.
 
 ### Venue whitelisting and the incorrect venue guard
 
@@ -113,10 +116,16 @@ backup rather than the default withdrawal route.
   also raise this rate limit, alongside the relevant venue withdraw keys, high enough to cover the
   expected backup withdrawals.
 
+- ERC4626 venue setup is two steps. Whitelisting an ERC4626 venue with `setVenueType` does not make
+  it usable on its own: `setMaxSharesInRatio` must also be called for that venue. The two calls are
+  uncoupled and unvalidated, so an unset ratio leaves `maxSharesIn` at zero and every withdrawal
+  through that venue reverts. A governance spell adding an ERC4626 venue must set its ratio in the
+  same spell.
+
 ## Trust Assumptions
 
 - `DEFAULT_ADMIN_ROLE` (Spark governance, `SPARK_PROXY`): fully trusted. Whitelists vaults and
-  venues, sets penalties and penality recipient.
+  venues, sets penalties and penalty recipient, and sets per venue max shares in ratios.
 - Supported assets must be standard, non-rebasing, non-fee-on-transfer ERC-20s. USDT is in scope and
   has a dormant fee switch that, if enabled, would break the exact penalty plus recipient amount
   split.

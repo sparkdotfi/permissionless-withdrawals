@@ -227,4 +227,8 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         );
     }
 
+    function _expectSharesBurnedTooHighRevert() internal override {
+        vm.expectRevert("ERC4626Facet/shares-burned-too-high");
+    }
+
 }

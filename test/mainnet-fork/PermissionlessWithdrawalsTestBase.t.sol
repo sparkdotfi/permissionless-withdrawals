@@ -83,8 +83,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     bytes32 internal constant _REENTRANCY_GUARD_NOT_ENTERED = bytes32(uint256(1));
     bytes32 internal constant _REENTRANCY_GUARD_ENTERED     = bytes32(uint256(2));
 
-    bytes32 internal constant DEFAULT_ADMIN_ROLE        = bytes32(0);
-    uint256 internal constant USDS_CONVERSION_PRECISION = 1e12;
+    bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
 
     uint256 internal constant SPETH_PENALTY_AMOUNT  = 10e18;
     uint256 internal constant SPUSDC_PENALTY_AMOUNT = 20_000e6;
@@ -250,6 +249,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     function _expectSwapUSDSToUSDCCall(uint64 count) internal virtual;
 
     function _expectTransferAssetCall(uint64 count) internal virtual;
+
+    function _expectSharesBurnedTooHighRevert() internal virtual;
 
     function _revokeRelayerRole(address account) internal virtual;
 
@@ -540,6 +541,16 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         withdrawals.setMaxSharesInRatio(venue, 1e18);
 
         assertEq(withdrawals.getMaxSharesInRatio(venue), 1e18);
+
+        // Setting the max shares in ratio to 0 is permitted.
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.MaxSharesInRatioSet(venue, 0);
+
+        vm.prank(admin);
+        withdrawals.setMaxSharesInRatio(venue, 0);
+
+        assertEq(withdrawals.getMaxSharesInRatio(venue), 0);
     }
 
     /**********************************************************************************************/
@@ -850,6 +861,32 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         ));
         vm.prank(user);
         withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
+    }
+
+    function test_permissionlessWithdraw_erc4626VenueSharesBurnedTooHigh() external {
+        uint256 shares = 500_000e6;
+
+        _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
+
+        // Full amount should be withdrawn from the ERC4626 venue.
+        deal(USDC, SP_USDC_VAULT, 0);
+        deal(USDC, proxy,         0);
+
+        vm.prank(admin);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+
+        // maxSharesInRatio is not set, so the shares burned is too high, so the call reverts.
+        _expectSharesBurnedTooHighRevert();
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, recipient, shares);
+
+        // maxSharesInRatio is set to a tighter value, so the shares burned is higher than the boundary, so the call reverts.
+        vm.prank(admin);
+        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 0.9e18 * 1e12);
+
+        _expectSharesBurnedTooHighRevert();
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, recipient, shares);
     }
 
     function test_permissionlessWithdraw_sll_rateLimitExceeded() external {
@@ -1578,10 +1615,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 recipientAmount = assets - SPETH_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the Aave venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
@@ -1646,10 +1681,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 recipientAmount = assets - SPUSDT_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the Aave venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         _mintSharesAndApprove(SP_USDT_VAULT, USDT, shares);
 
@@ -1718,10 +1751,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the ERC4626 venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.startPrank(admin);
@@ -1796,10 +1827,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the PSM venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
 
