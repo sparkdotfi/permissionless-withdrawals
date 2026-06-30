@@ -73,13 +73,6 @@ abstract contract PermissionlessWithdrawals is
     using SafeERC20 for IERC20;
 
     /**********************************************************************************************/
-    /*** Constants                                                                              ***/
-    /**********************************************************************************************/
-
-    /// @inheritdoc IPermissionlessWithdrawals
-    uint256 public constant override USDS_CONVERSION_PRECISION = 1e12;
-
-    /**********************************************************************************************/
     /*** Declarations                                                                           ***/
     /**********************************************************************************************/
 
@@ -90,6 +83,8 @@ abstract contract PermissionlessWithdrawals is
     address public immutable override proxy;
 
     mapping(address vault => VaultConfig config) _vaultConfigs;
+
+    mapping(address venue => uint256 maxSharesInRatio) _maxSharesInRatios;
 
     /// @inheritdoc IPermissionlessWithdrawals
     address public override penaltyRecipient;
@@ -177,6 +172,16 @@ abstract contract PermissionlessWithdrawals is
         require(recipient != address(0), ZeroPenaltyRecipientAddress());
 
         emit PenaltyRecipientSet(penaltyRecipient = recipient);
+    }
+
+    /// @inheritdoc IPermissionlessWithdrawals
+    function setMaxSharesInRatio(address venue, uint256 maxSharesInRatio)
+        external
+        override
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        emit MaxSharesInRatioSet(venue, _maxSharesInRatios[venue] = maxSharesInRatio);
     }
 
     /**********************************************************************************************/
@@ -275,7 +280,10 @@ abstract contract PermissionlessWithdrawals is
         if (assetsToTransfer > 0) {
             uint256 balance = IERC20Like(asset).balanceOf(proxy);
 
-            require(balance >= assetsToTransfer, InsufficientBalance(assetsToTransfer, balance));
+            require(
+                balance >= assetsToTransfer,
+                InsufficientAssetsInALMProxy(assetsToTransfer, balance)
+            );
 
             _transferAsset(asset, vault, assetsToTransfer);
         }
@@ -342,6 +350,16 @@ abstract contract PermissionlessWithdrawals is
         return _vaultConfigs[vault].venueTypes[venue];
     }
 
+    /// @inheritdoc IPermissionlessWithdrawals
+    function getMaxSharesInRatio(address venue)
+        external
+        view
+        override
+        returns (uint256 maxSharesInRatio)
+    {
+        return _maxSharesInRatios[venue];
+    }
+
     /**********************************************************************************************/
     /*** Internal Interactive Functions                                                         ***/
     /**********************************************************************************************/
@@ -354,13 +372,11 @@ abstract contract PermissionlessWithdrawals is
         }
 
         if (venueType == VenueType.ERC4626) {
-            return _withdrawERC4626(venue, amount, type(uint256).max);
+            return _withdrawERC4626(venue, amount, (amount * _maxSharesInRatios[venue]) / 1e18);
         }
 
         if (venueType == VenueType.PSM) {
-            _mintUSDS(amount * USDS_CONVERSION_PRECISION);
-            _swapUSDSToUSDC(amount);
-            return;
+            return _withdrawPSM(amount);
         }
 
         revert VenueTypeNotSet();
@@ -387,8 +403,6 @@ abstract contract PermissionlessWithdrawals is
 
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal virtual;
 
-    function _mintUSDS(uint256 usdsAmount) internal virtual;
-
-    function _swapUSDSToUSDC(uint256 usdcAmount) internal virtual;
+    function _withdrawPSM(uint256 amount) internal virtual;
 
 }

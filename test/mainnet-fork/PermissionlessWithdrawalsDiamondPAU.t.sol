@@ -187,53 +187,42 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     /*** Controller call expectation hooks                                                      ***/
     /**********************************************************************************************/
 
-    function _mockWithdrawAaveReturnsZero(address aToken, uint256 amount) internal override {
-        vm.mockCall(
-            controller,
-            abi.encodeCall(IDiamondControllerLike.aave_withdraw, (aToken, amount)),
-            abi.encode(uint256(0))
-        );
-    }
-
-    function _expectWithdrawAaveCall(address aToken, uint256 amount, uint64 count) internal override {
+    function _expectWithdrawAaveCall(uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IDiamondControllerLike.aave_withdraw, (aToken, amount)),
+            abi.encodeWithSelector(IDiamondControllerLike.aave_withdraw.selector),
             count
         );
     }
 
-    function _expectWithdrawERC4626Call(address token, uint256 amount, uint64 count) internal override {
+    function _expectWithdrawERC4626Call(uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IDiamondControllerLike.erc4626_withdraw, (token, amount, type(uint256).max)),
+            abi.encodeWithSelector(IDiamondControllerLike.erc4626_withdraw.selector),
             count
         );
     }
 
-    function _expectMintUSDSCall(uint256 usdsAmount, uint64 count) internal override {
+    function _expectMintUSDSCall(uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IDiamondControllerLike.usds_mint, (usdsAmount)),
+            abi.encodeWithSelector(IDiamondControllerLike.usds_mint.selector),
             count
         );
     }
 
-    function _expectSwapUSDSToUSDCCall(uint256 usdcAmount, uint64 count) internal override {
+    function _expectSwapUSDSToUSDCCall(uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IDiamondControllerLike.psm_swapUSDSToUSDC, (usdcAmount)),
+            abi.encodeWithSelector(IDiamondControllerLike.psm_swapUSDSToUSDC.selector),
             count
         );
     }
 
-    function _expectTransferAssetCall(address asset_, address destination, uint256 amount, uint64 count)
-        internal
-        override
-    {
+    function _expectTransferAssetCall(uint64 count) internal override {
         vm.expectCall(
             controller,
-            abi.encodeCall(IDiamondControllerLike.transferAsset_transfer, (asset_, destination, amount)),
+            abi.encodeWithSelector(IDiamondControllerLike.transferAsset_transfer.selector),
             count
         );
     }

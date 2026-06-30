@@ -22,6 +22,12 @@ interface ILegacyControllerLike {
 contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
 
     /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
+    uint256 internal constant _USDS_CONVERSION_PRECISION = 1e12;
+
+    /**********************************************************************************************/
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
@@ -50,12 +56,9 @@ contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
         ILegacyControllerLike(controller).withdrawERC4626(token, amount, maxSharesIn);
     }
 
-    function _mintUSDS(uint256 usdsAmount) internal override {
-        ILegacyControllerLike(controller).mintUSDS(usdsAmount);
-    }
-
-    function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        ILegacyControllerLike(controller).swapUSDSToUSDC(usdcAmount);
+    function _withdrawPSM(uint256 amount) internal override {
+        ILegacyControllerLike(controller).mintUSDS(amount * _USDS_CONVERSION_PRECISION);
+        ILegacyControllerLike(controller).swapUSDSToUSDC(amount);
     }
 
 }

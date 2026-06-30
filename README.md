@@ -17,12 +17,12 @@ default route.
 
 ## Core Contracts
 
-| Contract                              | Description                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------- |
-| `PermissionlessWithdrawals`           | Abstract base holding all withdrawal logic, controller calls are virtual hooks  |
-| `PermissionlessWithdrawalsLegacyPAU`  | Concrete implementation for the legacy MainnetController                        |
-| `PermissionlessWithdrawalsDiamondPAU` | Concrete implementation for the diamond (PAU) MainnetController                 |
-| `IPermissionlessWithdrawals`          | External interface: types, errors, events, and function signatures              |
+| Contract                              | Description                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| `PermissionlessWithdrawals`           | Abstract base holding all withdrawal logic, controller calls are virtual hooks |
+| `PermissionlessWithdrawalsLegacyPAU`  | Concrete implementation for the legacy MainnetController                       |
+| `PermissionlessWithdrawalsDiamondPAU` | Concrete implementation for the diamond (PAU) MainnetController                |
+| `IPermissionlessWithdrawals`          | External interface: types, errors, events, and function signatures             |
 
 Two concrete contracts exist because Spark runs a legacy MainnetController and new DiamondPAU controller (which is a migration from old controller).
 The shared logic lives once in the abstract base, each implementation only binds the controller interactions to its
@@ -65,3 +65,9 @@ forge test
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](./LICENSE).
+
+---
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c83ef7e4-fae1-4c5c-8cff-99494ef75962" height="100"/>
+</p>

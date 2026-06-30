@@ -58,7 +58,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      *  @param  required  The amount of assets requested.
      *  @param  available The amount of assets actually held by the ALM proxy.
      */
-    error InsufficientBalance(uint256 required, uint256 available);
+    error InsufficientAssetsInALMProxy(uint256 required, uint256 available);
 
     /// @notice Thrown when the ETH transfer to the recipient fails.
     error TransferETHFailed();
@@ -99,6 +99,15 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
     /*** Events                                                                                 ***/
     /**********************************************************************************************/
+
+    /**
+     *  @notice Emitted when the admin sets the ratio for the maximum number of shares that can be
+     *          withdrawn from an ERC4626 venue given an amount of assets.
+     *  @param  venue            Address of the venue that was configured.
+     *  @param  maxSharesInRatio The ratio between the maximum number of shares and the amount of
+     *                           assets.
+     */
+    event MaxSharesInRatioSet(address indexed venue, uint256 maxSharesInRatio);
 
     /**
      *  @notice Emitted on a successful permissionless withdrawal.
@@ -143,6 +152,17 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
     /*** Interactive Admin Functions                                                            ***/
     /**********************************************************************************************/
+
+    /**
+     *  @notice Updates the ratio for the maximum number of shares that can be withdrawn from an
+     *          ERC4626 venue given an amount of assets.
+     *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     *  @dev    A `maxSharesInRatio` of 1e18 is 100% (i.e. 1:1).
+     *  @param  venue            Address of the venue to configure.
+     *  @param  maxSharesInRatio The ratio between the maximum number of shares and the amount of
+     *                           assets.
+     */
+    function setMaxSharesInRatio(address venue, uint256 maxSharesInRatio) external;
 
     /**
      *  @notice Updates the configuration for a given vault.
@@ -228,12 +248,6 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
 
     /**
-     *  @notice The fixed precision factor for converting a 6 decimal gem amount to 18 decimal USDS.
-     *  @dev    Hardcoded to 1e12, which assumes the PSM gem is USDC.
-     */
-    function USDS_CONVERSION_PRECISION() external pure returns (uint256);
-
-    /**
      *  @notice Returns the configured MainnetController address.
      */
     function controller() external view returns (address);
@@ -251,6 +265,15 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
     /*** View/Pure Functions                                                                    ***/
     /**********************************************************************************************/
+
+    /**
+     *  @notice Returns the ratio between the maximum number of shares that can be withdrawn from a
+     *          given ERC4626 venue and the amount of assets.
+     *  @param  venue            Address of the venue to query.
+     *  @return maxSharesInRatio The ratio between the maximum number of shares and the amount of
+     *                           assets.
+     */
+    function getMaxSharesInRatio(address venue) external view returns (uint256 maxSharesInRatio);
 
     /**
      *  @notice Returns whether a vault is whitelisted for permissionless withdrawals.

@@ -22,6 +22,12 @@ interface IDiamondControllerLike {
 contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
 
     /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
+    uint256 internal constant _USDS_CONVERSION_PRECISION = 1e12;
+
+    /**********************************************************************************************/
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
@@ -50,12 +56,9 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
         IDiamondControllerLike(controller).erc4626_withdraw(token, amount, maxSharesIn);
     }
 
-    function _mintUSDS(uint256 usdsAmount) internal override {
-        IDiamondControllerLike(controller).usds_mint(usdsAmount);
-    }
-
-    function _swapUSDSToUSDC(uint256 usdcAmount) internal override {
-        IDiamondControllerLike(controller).psm_swapUSDSToUSDC(usdcAmount);
+    function _withdrawPSM(uint256 amount) internal override {
+        IDiamondControllerLike(controller).usds_mint(amount * _USDS_CONVERSION_PRECISION);
+        IDiamondControllerLike(controller).psm_swapUSDSToUSDC(amount);
     }
 
 }

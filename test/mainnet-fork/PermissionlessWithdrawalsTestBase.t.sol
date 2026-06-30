@@ -60,6 +60,10 @@ interface ISparkVaultLike {
 
     function approve(address spender, uint256 amount) external returns (bool);
 
+    function mint(uint256 shares, address receiver) external returns (uint256 assets);
+
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+
     function allowance(address owner, address spender) external view returns (uint256);
 
     function balanceOf(address owner) external view returns (uint256);
@@ -68,9 +72,7 @@ interface ISparkVaultLike {
 
     function convertToShares(uint256 assets) external view returns (uint256 shares);
 
-    function mint(uint256 shares, address receiver) external returns (uint256 assets);
-
-    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+    function previewWithdraw(uint256 assets) external view returns (uint256 shares);
 
 }
 
@@ -239,23 +241,19 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     /*** Controller-specific hooks                                                              ***/
     /**********************************************************************************************/
 
-    function _expectWithdrawAaveCall(address aToken, uint256 amount, uint64 count) internal virtual;
+    function _expectWithdrawAaveCall(uint64 count) internal virtual;
 
-    function _expectWithdrawERC4626Call(address token, uint256 amount, uint64 count) internal virtual;
+    function _expectWithdrawERC4626Call(uint64 count) internal virtual;
 
-    function _expectMintUSDSCall(uint256 usdsAmount, uint64 count) internal virtual;
+    function _expectMintUSDSCall(uint64 count) internal virtual;
 
-    function _expectSwapUSDSToUSDCCall(uint256 usdcAmount, uint64 count) internal virtual;
+    function _expectSwapUSDSToUSDCCall(uint64 count) internal virtual;
 
-    function _expectTransferAssetCall(address asset_, address destination, uint256 amount, uint64 count)
-        internal
-        virtual;
+    function _expectTransferAssetCall(uint64 count) internal virtual;
 
     function _revokeRelayerRole(address account) internal virtual;
 
     function _relayerRole() internal view virtual returns (bytes32);
-
-    function _mockWithdrawAaveReturnsZero(address aToken, uint256 amount) internal virtual;
 
     /**********************************************************************************************/
     /*** constructor tests                                                                      ***/
@@ -508,6 +506,40 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
             uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
             uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
+    }
+
+    /**********************************************************************************************/
+    /*** setMaxSharesInRatio tests                                                              ***/
+    /**********************************************************************************************/
+
+    function test_setMaxSharesInRatio_reentrancy() external {
+        _setWithdrawalsEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        withdrawals.setMaxSharesInRatio(address(0), 0);
+    }
+
+    function test_setMaxSharesInRatio_unauthorized() external {
+        vm.expectRevert(abi.encodeWithSelector(
+            IAccessControl.AccessControlUnauthorizedAccount.selector,
+            unauthorized,
+            DEFAULT_ADMIN_ROLE
+        ));
+        vm.prank(unauthorized);
+        withdrawals.setMaxSharesInRatio(address(0), 0);
+    }
+
+    function test_setMaxSharesInRatio() external {
+        address venue = makeAddr("venue");
+
+        assertEq(withdrawals.getMaxSharesInRatio(venue), 0);
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.MaxSharesInRatioSet(venue, 1e18);
+
+        vm.prank(admin);
+        withdrawals.setMaxSharesInRatio(venue, 1e18);
+
+        assertEq(withdrawals.getMaxSharesInRatio(venue), 1e18);
     }
 
     /**********************************************************************************************/
@@ -845,11 +877,10 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Neutralise the real venue call and simulate it delivering one wei short of the request:
         // the proxy reads zero before the withdrawal and `assets - 1` after.
-        _mockWithdrawAaveReturnsZero(SparkLend.WETH_SPTOKEN, assets);
         _mockProxyDelivery(WETH, proxy, 0, assets - 1);
 
         vm.expectRevert(abi.encodeWithSelector(
-            IPermissionlessWithdrawals.InsufficientBalance.selector,
+            IPermissionlessWithdrawals.InsufficientAssetsInALMProxy.selector,
             assets,
             assets - 1
         ));
@@ -859,12 +890,14 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // Delivering the full requested amount via the real venue succeeds.
         vm.clearMockedCalls();
 
+        _mockProxyDelivery(WETH, proxy, 0, assets);
+
         vm.prank(user);
         withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
     }
 
     function test_permissionlessWithdraw_insufficientAssetsToCoverPenaltyBoundary() external {
-        uint256 shares = ISparkVaultLike(SP_ETH_VAULT).convertToShares(SPETH_PENALTY_AMOUNT) + 1; // Rounding
+        uint256 shares = ISparkVaultLike(SP_ETH_VAULT).previewWithdraw(SPETH_PENALTY_AMOUNT);
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
@@ -953,7 +986,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // No transferAsset call is expected, since the vault alone covers the full amount.
-        _expectTransferAssetCall(WETH, SP_ETH_VAULT, assets, 0);
+        _expectTransferAssetCall(0);
 
         vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1005,7 +1038,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // No transferAsset call is expected, since the vault alone covers the full amount.
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assets, 0);
+        _expectTransferAssetCall(0);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1057,7 +1090,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // No transferAsset call is expected, since the vault alone covers the full amount.
-        _expectTransferAssetCall(USDT, SP_USDT_VAULT, assets, 0);
+        _expectTransferAssetCall(0);
 
         vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1119,11 +1152,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // No venue withdrawal is needed, since the proxy covers the full amount.
-        _expectWithdrawAaveCall(SparkLend.WETH_SPTOKEN, assets, 0);
-        _expectWithdrawERC4626Call(SparkLend.WETH_SPTOKEN, assets, 0);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assets, 0);
-        _expectTransferAssetCall(WETH, SP_ETH_VAULT, assets, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1181,11 +1214,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // No venue withdrawal is needed, since the proxy covers the full amount.
-        _expectWithdrawAaveCall(Ethereum.PSM, assets, 0);
-        _expectWithdrawERC4626Call(Ethereum.PSM, assets, 0);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assets, 0);
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assets, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1242,11 +1275,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // No venue withdrawal is needed, since the proxy covers the full amount.
-        _expectWithdrawAaveCall(SparkLend.USDT_SPTOKEN, assets, 0);
-        _expectWithdrawERC4626Call(SparkLend.USDT_SPTOKEN, assets, 0);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assets, 0);
-        _expectTransferAssetCall(USDT, SP_USDT_VAULT, assets, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1308,11 +1341,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The full amount is withdrawn from the Aave venue and transferred to the vault.
-        _expectWithdrawAaveCall(SparkLend.WETH_SPTOKEN, assets, 1);
-        _expectWithdrawERC4626Call(SparkLend.WETH_SPTOKEN, assets, 0);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assets, 0);
-        _expectTransferAssetCall(WETH, SP_ETH_VAULT, assets, 1);
+        _expectWithdrawAaveCall(1);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1370,11 +1403,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The full amount is withdrawn from the Aave venue and transferred to the vault.
-        _expectWithdrawAaveCall(SparkLend.USDT_SPTOKEN, assets, 1);
-        _expectWithdrawERC4626Call(SparkLend.USDT_SPTOKEN, assets, 0);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assets, 0);
-        _expectTransferAssetCall(USDT, SP_USDT_VAULT, assets, 1);
+        _expectWithdrawAaveCall(1);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1402,13 +1435,15 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     /**********************************************************************************************/
 
     function test_permissionlessWithdraw_erc4626VenueCoversFullAmount_spUSDC() external {
-        uint256 shares          = 500_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
-        uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
+        uint256 shares           = 500_000e6;
+        uint256 assets           = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 recipientAmount  = assets - SPUSDC_PENALTY_AMOUNT;
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
-        vm.prank(admin);
+        vm.startPrank(admin);
         withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
+        vm.stopPrank();
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
 
@@ -1440,11 +1475,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The full amount is withdrawn from the ERC4626 venue and transferred to the vault.
-        _expectWithdrawAaveCall(Ethereum.PSM, assets, 0);
-        _expectWithdrawERC4626Call(Ethereum.MORPHO_VAULT_USDC_BC, assets, 1);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assets, 0);
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assets, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(1);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1506,11 +1541,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The full amount is sourced via the PSM (mint USDS, swap to USDC) and transferred to the vault.
-        _expectWithdrawAaveCall(Ethereum.PSM, assets, 0);
-        _expectWithdrawERC4626Call(Ethereum.PSM, assets, 0);
-        _expectMintUSDSCall(assets * USDS_CONVERSION_PRECISION, 1);
-        _expectSwapUSDSToUSDCCall(assets, 1);
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assets, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(1);
+        _expectSwapUSDSToUSDCCall(1);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1578,11 +1613,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
-        _expectWithdrawAaveCall(SparkLend.WETH_SPTOKEN, assetsToWithdraw, 1);
-        _expectWithdrawERC4626Call(SparkLend.WETH_SPTOKEN, assetsToWithdraw, 0);
-        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 0);
-        _expectTransferAssetCall(WETH, SP_ETH_VAULT, assetsToTransfer, 1);
+        _expectWithdrawAaveCall(1);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1646,11 +1681,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
-        _expectWithdrawAaveCall(SparkLend.USDT_SPTOKEN, assetsToWithdraw, 1);
-        _expectWithdrawERC4626Call(SparkLend.USDT_SPTOKEN, assetsToWithdraw, 0);
-        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 0);
-        _expectTransferAssetCall(USDT, SP_USDT_VAULT, assetsToTransfer, 1);
+        _expectWithdrawAaveCall(1);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1689,8 +1724,10 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
-        vm.prank(admin);
+        vm.startPrank(admin);
         withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
+        vm.stopPrank();
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
 
@@ -1722,11 +1759,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
-        _expectWithdrawAaveCall(Ethereum.PSM, assetsToWithdraw, 0);
-        _expectWithdrawERC4626Call(Ethereum.MORPHO_VAULT_USDC_BC, assetsToWithdraw, 1);
-        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 0);
-        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 0);
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assetsToTransfer, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(1);
+        _expectMintUSDSCall(0);
+        _expectSwapUSDSToUSDCCall(0);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1794,11 +1831,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         // The venue covers only the remaining shortfall, then the full shortfall is transferred to the vault.
-        _expectWithdrawAaveCall(Ethereum.PSM, assetsToWithdraw, 0);
-        _expectWithdrawERC4626Call(Ethereum.PSM, assetsToWithdraw, 0);
-        _expectMintUSDSCall(assetsToWithdraw * USDS_CONVERSION_PRECISION, 1);
-        _expectSwapUSDSToUSDCCall(assetsToWithdraw, 1);
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assetsToTransfer, 1);
+        _expectWithdrawAaveCall(0);
+        _expectWithdrawERC4626Call(0);
+        _expectMintUSDSCall(1);
+        _expectSwapUSDSToUSDCCall(1);
+        _expectTransferAssetCall(1);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
 
@@ -1833,8 +1870,9 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Whitelist the ERC4626 and Aave (spToken) USDC venues. The PSM venue is whitelisted in setUp.
         vm.startPrank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
         withdrawals.setVenueType(SP_USDC_VAULT, SparkLend.USDC_SPTOKEN,        IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
         vm.stopPrank();
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, totalShares);
@@ -1855,11 +1893,11 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         });
 
         // Each venue supplies exactly one withdrawal in full.
-        _expectWithdrawERC4626Call(Ethereum.MORPHO_VAULT_USDC_BC, assetsEach, 1);
-        _expectWithdrawAaveCall(SparkLend.USDC_SPTOKEN, assetsEach, 1);
-        _expectMintUSDSCall(assetsEach * USDS_CONVERSION_PRECISION, 1);
-        _expectSwapUSDSToUSDCCall(assetsEach, 1);
-        _expectTransferAssetCall(USDC, SP_USDC_VAULT, assetsEach, 3);
+        _expectWithdrawERC4626Call(1);
+        _expectWithdrawAaveCall(1);
+        _expectMintUSDSCall(1);
+        _expectSwapUSDSToUSDCCall(1);
+        _expectTransferAssetCall(3);
 
         vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (sharesEach, address(withdrawals), user)), 3);
 
