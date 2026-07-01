@@ -240,6 +240,7 @@ abstract contract PermissionlessWithdrawals is
         nonReentrant
     {
         // Step 1: Validation.
+        // NOTE: Venue can be zero address if a withdrawal from a venue is not expected or desired.
 
         require(vault     != address(0), ZeroVaultAddress());
         require(recipient != address(0), ZeroRecipientAddress());

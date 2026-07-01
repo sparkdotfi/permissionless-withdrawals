@@ -117,4 +117,8 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
         );
     }
 
+    function _expectSharesBurnedTooHighRevert() internal override {
+        vm.expectRevert("MC/shares-burned-too-high");
+    }
+
 }

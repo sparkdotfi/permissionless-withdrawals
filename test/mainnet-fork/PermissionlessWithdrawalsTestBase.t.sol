@@ -38,9 +38,21 @@ interface IERC20Like {
 
 }
 
-interface IERC4626Like {
+interface IERC4626Like is IERC20Like {
+
+    function mint(uint256 shares, address receiver) external returns (uint256 assets);
+
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+
+    function allowance(address owner, address spender) external view returns (uint256);
 
     function asset() external view returns (address);
+
+    function convertToAssets(uint256 shares) external view returns (uint256 assets);
+
+    function convertToShares(uint256 assets) external view returns (uint256 shares);
+
+    function previewWithdraw(uint256 assets) external view returns (uint256 shares);
 
 }
 
@@ -56,26 +68,6 @@ interface IPSMLike {
 
 }
 
-interface ISparkVaultLike {
-
-    function approve(address spender, uint256 amount) external returns (bool);
-
-    function mint(uint256 shares, address receiver) external returns (uint256 assets);
-
-    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets);
-
-    function allowance(address owner, address spender) external view returns (uint256);
-
-    function balanceOf(address owner) external view returns (uint256);
-
-    function convertToAssets(uint256 shares) external view returns (uint256 assets);
-
-    function convertToShares(uint256 assets) external view returns (uint256 shares);
-
-    function previewWithdraw(uint256 assets) external view returns (uint256 shares);
-
-}
-
 abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)) & ~bytes32(uint256(0xff))
@@ -83,8 +75,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     bytes32 internal constant _REENTRANCY_GUARD_NOT_ENTERED = bytes32(uint256(1));
     bytes32 internal constant _REENTRANCY_GUARD_ENTERED     = bytes32(uint256(2));
 
-    bytes32 internal constant DEFAULT_ADMIN_ROLE        = bytes32(0);
-    uint256 internal constant USDS_CONVERSION_PRECISION = 1e12;
+    bytes32 internal constant DEFAULT_ADMIN_ROLE = bytes32(0);
 
     uint256 internal constant SPETH_PENALTY_AMOUNT  = 10e18;
     uint256 internal constant SPUSDC_PENALTY_AMOUNT = 20_000e6;
@@ -187,16 +178,16 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     }
 
     function _mintSharesAndApprove(address vault, address asset, uint256 shares) internal {
-        uint256 assets = ISparkVaultLike(vault).convertToAssets(shares) + 1; // Rounding
+        uint256 assets = IERC4626Like(vault).convertToAssets(shares) + 1; // Rounding
 
         deal(asset, user, assets);
 
         vm.startPrank(user);
 
-        IERC20Like(asset).approve(vault,                     0);
-        IERC20Like(asset).approve(vault,                     assets);
-        ISparkVaultLike(vault).mint(shares,                  user);
-        ISparkVaultLike(vault).approve(address(withdrawals), shares);
+        IERC20Like(asset).approve(vault,                  0);
+        IERC20Like(asset).approve(vault,                  assets);
+        IERC4626Like(vault).mint(shares,                  user);
+        IERC4626Like(vault).approve(address(withdrawals), shares);
 
         vm.stopPrank();
     }
@@ -220,9 +211,9 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         uint256 vaultAssets,
         uint256 proxyAssets
     ) internal view {
-        assertEq(ISparkVaultLike(vault).balanceOf(user),                       userShares);
-        assertEq(ISparkVaultLike(vault).balanceOf(address(withdrawals)),       0);
-        assertEq(ISparkVaultLike(vault).allowance(user, address(withdrawals)), userAllowance);
+        assertEq(IERC4626Like(vault).balanceOf(user),                       userShares);
+        assertEq(IERC4626Like(vault).balanceOf(address(withdrawals)),       0);
+        assertEq(IERC4626Like(vault).allowance(user, address(withdrawals)), userAllowance);
 
         assertEq(IERC20Like(asset).balanceOf(recipient),            recipientAssets);
         assertEq(IERC20Like(asset).balanceOf(penaltyRecipient),     penaltyRecipientAssets);
@@ -250,6 +241,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     function _expectSwapUSDSToUSDCCall(uint64 count) internal virtual;
 
     function _expectTransferAssetCall(uint64 count) internal virtual;
+
+    function _expectSharesBurnedTooHighRevert() internal virtual;
 
     function _revokeRelayerRole(address account) internal virtual;
 
@@ -540,6 +533,16 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         withdrawals.setMaxSharesInRatio(venue, 1e18);
 
         assertEq(withdrawals.getMaxSharesInRatio(venue), 1e18);
+
+        // Setting the max shares in ratio to 0 is permitted.
+
+        vm.expectEmit(address(withdrawals));
+        emit IPermissionlessWithdrawals.MaxSharesInRatioSet(venue, 0);
+
+        vm.prank(admin);
+        withdrawals.setMaxSharesInRatio(venue, 0);
+
+        assertEq(withdrawals.getMaxSharesInRatio(venue), 0);
     }
 
     /**********************************************************************************************/
@@ -852,6 +855,32 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
     }
 
+    function test_permissionlessWithdraw_erc4626VenueSharesBurnedTooHigh() external {
+        uint256 shares = 500_000e6;
+
+        _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
+
+        // Full amount should be withdrawn from the ERC4626 venue.
+        deal(USDC, SP_USDC_VAULT, 0);
+        deal(USDC, proxy,         0);
+
+        vm.prank(admin);
+        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+
+        // maxSharesInRatio is not set, so the shares burned is too high, so the call reverts.
+        _expectSharesBurnedTooHighRevert();
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, recipient, shares);
+
+        // maxSharesInRatio is set to a tighter value, so the shares burned is higher than the boundary, so the call reverts.
+        vm.prank(admin);
+        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 0.9e18 * 1e12);
+
+        _expectSharesBurnedTooHighRevert();
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, recipient, shares);
+    }
+
     function test_permissionlessWithdraw_sll_rateLimitExceeded() external {
         uint256 shares = 1_000_000_000e6;
 
@@ -867,7 +896,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_insufficientVenueLiquidityBoundary() external {
         uint256 shares = 10_000e18;
-        uint256 assets = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 assets = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares);
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
@@ -888,8 +917,6 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
 
         // Delivering the full requested amount via the real venue succeeds.
-        vm.clearMockedCalls();
-
         _mockProxyDelivery(WETH, proxy, 0, assets);
 
         vm.prank(user);
@@ -897,7 +924,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     }
 
     function test_permissionlessWithdraw_insufficientAssetsToCoverPenaltyBoundary() external {
-        uint256 shares = ISparkVaultLike(SP_ETH_VAULT).previewWithdraw(SPETH_PENALTY_AMOUNT);
+        uint256 shares = IERC4626Like(SP_ETH_VAULT).previewWithdraw(SPETH_PENALTY_AMOUNT);
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
@@ -920,7 +947,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Resetting the allowance to one less share than the requested amount.
         vm.prank(user);
-        ISparkVaultLike(SP_ETH_VAULT).approve(address(withdrawals), shares - 1);
+        IERC4626Like(SP_ETH_VAULT).approve(address(withdrawals), shares - 1);
 
         vm.expectRevert("SparkVault/insufficient-allowance");
         vm.prank(user);
@@ -928,7 +955,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Approving the full amount succeeds.
         vm.prank(user);
-        ISparkVaultLike(SP_ETH_VAULT).approve(address(withdrawals), shares);
+        IERC4626Like(SP_ETH_VAULT).approve(address(withdrawals), shares);
 
         vm.prank(user);
         withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares);
@@ -959,7 +986,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultCoversFullAmount_spETH() external {
         uint256 shares          = 10_000e18;
-        uint256 assets          = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPETH_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
@@ -988,7 +1015,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // No transferAsset call is expected, since the vault alone covers the full amount.
         _expectTransferAssetCall(0);
 
-        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1011,7 +1038,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultCoversFullAmount_spUSDC() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1040,7 +1067,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // No transferAsset call is expected, since the vault alone covers the full amount.
         _expectTransferAssetCall(0);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1063,7 +1090,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultCoversFullAmount_spUSDT() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDT_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDT_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDT_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDT_VAULT, USDT, shares);
@@ -1092,7 +1119,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // No transferAsset call is expected, since the vault alone covers the full amount.
         _expectTransferAssetCall(0);
 
-        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1119,7 +1146,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_proxyCoversFullAmount_spETH() external {
         uint256 shares          = 10_000e18;
-        uint256 assets          = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPETH_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
@@ -1158,7 +1185,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1181,7 +1208,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_proxyCoversFullAmount_spUSDC() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1220,7 +1247,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1243,7 +1270,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_proxyCoversFullAmount_spUSDT() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDT_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDT_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDT_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDT_VAULT, USDT, shares);
@@ -1281,7 +1308,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1308,7 +1335,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_aaveVenueCoversFullAmount_spETH() external {
         uint256 shares          = 10_000e18;
-        uint256 assets          = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPETH_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
@@ -1347,7 +1374,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1370,7 +1397,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_aaveVenueCoversFullAmount_spUSDT() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDT_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDT_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDT_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDT_VAULT, USDT, shares);
@@ -1409,7 +1436,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1435,9 +1462,9 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     /**********************************************************************************************/
 
     function test_permissionlessWithdraw_erc4626VenueCoversFullAmount_spUSDC() external {
-        uint256 shares           = 500_000e6;
-        uint256 assets           = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
-        uint256 recipientAmount  = assets - SPUSDC_PENALTY_AMOUNT;
+        uint256 shares          = 500_000e6;
+        uint256 assets          = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.startPrank(admin);
@@ -1481,7 +1508,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1508,7 +1535,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_psmVenueCoversFullAmount_spUSDC() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1547,7 +1574,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(1);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1574,14 +1601,12 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultProxyAaveVenueCoversFullAmount_spETH() external {
         uint256 shares          = 10_000e18;
-        uint256 assets          = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPETH_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the Aave venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
@@ -1619,7 +1644,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1642,14 +1667,12 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultProxyAaveVenueCoversFullAmount_spUSDT() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDT_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDT_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDT_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the Aave venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         _mintSharesAndApprove(SP_USDT_VAULT, USDT, shares);
 
@@ -1687,7 +1710,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDT_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1714,14 +1737,12 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultProxyERC4626VenueCoversFullAmount_spUSDC() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the ERC4626 venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.startPrank(admin);
@@ -1765,7 +1786,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(0);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1792,14 +1813,12 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_vaultProxyPsmVenueCoversFullAmount_spUSDC() external {
         uint256 shares          = 1_000_000e6;
-        uint256 assets          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 assets          = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assets - SPUSDC_PENALTY_AMOUNT;
 
         // The vault keeps a quarter, the proxy covers a quarter, the PSM venue draws the rest.
-        uint256 vaultAmount      = assets / 4;
-        uint256 proxyAmount      = assets / 4;
-        uint256 assetsToTransfer = assets - vaultAmount;           // Moved into the vault
-        uint256 assetsToWithdraw = assetsToTransfer - proxyAmount; // Drawn from the venue
+        uint256 vaultAmount = assets / 4;
+        uint256 proxyAmount = assets / 4;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
 
@@ -1837,7 +1856,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(1);
         _expectTransferAssetCall(1);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.record();
 
@@ -1865,7 +1884,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     function test_permissionlessWithdraw_multipleWithdrawals_spUSDC() external {
         uint256 sharesEach          = 500_000e6;
         uint256 totalShares         = sharesEach * 3;
-        uint256 assetsEach          = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(sharesEach);
+        uint256 assetsEach          = IERC4626Like(SP_USDC_VAULT).convertToAssets(sharesEach);
         uint256 recipientAmountEach = assetsEach - SPUSDC_PENALTY_AMOUNT;
 
         // Whitelist the ERC4626 and Aave (spToken) USDC venues. The PSM venue is whitelisted in setUp.
@@ -1899,7 +1918,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(1);
         _expectTransferAssetCall(3);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (sharesEach, address(withdrawals), user)), 3);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (sharesEach, address(withdrawals), user)), 3);
 
         // Withdrawal 1: ERC4626 venue.
         vm.expectEmit(address(withdrawals));
@@ -1961,7 +1980,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function testFuzz_liquiditySplit(uint256 vaultBalance, uint256 proxyBalance) external {
         uint256 shares          = 1_000_000e6;
-        uint256 assetsRequested = ISparkVaultLike(SP_USDC_VAULT).convertToAssets(shares);
+        uint256 assetsRequested = IERC4626Like(SP_USDC_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assetsRequested - SPUSDC_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1990,7 +2009,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectSwapUSDSToUSDCCall(assetsToWithdraw > 0 ? 1 : 0);
         _expectTransferAssetCall(assetsToTransfer > 0 ? 1 : 0);
 
-        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_USDC_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PermissionlessWithdraw(
@@ -2019,7 +2038,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function testFuzz_venueNotReachedWhenLiquiditySufficient(uint256 vaultBalance, uint256 proxyBalance) external {
         uint256 shares          = 100_000e18;
-        uint256 assetsRequested = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares);
+        uint256 assetsRequested = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares);
         uint256 recipientAmount = assetsRequested - SPETH_PENALTY_AMOUNT;
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
@@ -2059,7 +2078,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // No shortfall: the venue is never touched and the withdrawal succeeds.
 
         _expectTransferAssetCall(assetsToTransfer > 0 ? 1 : 0);
-        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PermissionlessWithdraw(
@@ -2087,7 +2106,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function testFuzz_penaltyAmount(uint256 penaltyAmount) external {
         uint256 shares = 10_000e18;
-        uint256 assets = ISparkVaultLike(SP_ETH_VAULT).convertToAssets(shares); // == redeemed fullAmount
+        uint256 assets = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares); // == redeemed fullAmount
 
         penaltyAmount = bound(penaltyAmount, 1, assets * 2);
 
@@ -2125,7 +2144,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         _expectTransferAssetCall(0); // Vault covers the full amount.
 
-        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(ISparkVaultLike.redeem, (shares, address(withdrawals), user)), 1);
+        vm.expectCall(SP_ETH_VAULT, abi.encodeCall(IERC4626Like.redeem, (shares, address(withdrawals), user)), 1);
 
         vm.expectEmit(address(withdrawals));
         emit IPermissionlessWithdrawals.PermissionlessWithdraw(
