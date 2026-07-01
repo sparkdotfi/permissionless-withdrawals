@@ -1972,6 +1972,17 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         deal(USDC, SP_USDC_VAULT, vaultBalance);
         deal(USDC, proxy,         proxyBalance);
 
+        _assertBalances({
+            vault                  : SP_USDC_VAULT,
+            asset                  : USDC,
+            userShares             : shares,
+            userAllowance          : shares,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : vaultBalance,
+            proxyAssets            : proxyBalance
+        });
+
         uint256 assetsToTransfer = assetsRequested  > vaultBalance ? assetsRequested - vaultBalance  : 0;
         uint256 assetsToWithdraw = assetsToTransfer > proxyBalance ? assetsToTransfer - proxyBalance : 0;
 
@@ -2034,6 +2045,17 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
             return;
         }
 
+        _assertBalances({
+            vault                  : SP_ETH_VAULT,
+            asset                  : WETH,
+            userShares             : shares,
+            userAllowance          : shares,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : vaultBalance,
+            proxyAssets            : proxyBalance
+        });
+
         // No shortfall: the venue is never touched and the withdrawal succeeds.
 
         _expectTransferAssetCall(assetsToTransfer > 0 ? 1 : 0);
@@ -2074,8 +2096,6 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
-        // The vault alone covers the full amount, so no venue or proxy interaction is needed
-
         if (penaltyAmount > assets) {
             // The redeemed assets cannot cover the penalty.
             vm.expectRevert(abi.encodeWithSelector(
@@ -2089,9 +2109,19 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
             return;
         }
 
-        // penaltyAmount <= assets: the withdrawal succeeds (recipient receives zero at the boundary).
-        uint256 recipientAmount = assets - penaltyAmount;
-        uint256 vaultAssets     = IERC20Like(WETH).balanceOf(SP_ETH_VAULT) - assets;
+        uint256 recipientAmount     = assets - penaltyAmount;
+        uint256 vaultAssetsStarting = IERC20Like(WETH).balanceOf(SP_ETH_VAULT);
+
+        _assertBalances({
+            vault                  : SP_ETH_VAULT,
+            asset                  : WETH,
+            userShares             : shares,
+            userAllowance          : shares,
+            recipientAssets        : 0,
+            penaltyRecipientAssets : 0,
+            vaultAssets            : vaultAssetsStarting,
+            proxyAssets            : 0
+        });
 
         _expectTransferAssetCall(0); // Vault covers the full amount.
 
@@ -2116,7 +2146,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
             userAllowance          : 0,
             recipientAssets        : recipientAmount,
             penaltyRecipientAssets : penaltyAmount,
-            vaultAssets            : vaultAssets,
+            vaultAssets            : vaultAssetsStarting - assets,
             proxyAssets            : 0
         });
     }
