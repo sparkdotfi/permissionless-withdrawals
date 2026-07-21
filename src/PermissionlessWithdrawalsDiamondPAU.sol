@@ -3,6 +3,14 @@ pragma solidity ^0.8.34;
 
 import { PermissionlessWithdrawals } from "./PermissionlessWithdrawals.sol";
 
+interface IAccessControls {
+
+    function hasRole(bytes32 role, address account) external view returns (bool);
+
+}
+
+// NOTE: While this interface depends on how the PAU Beacon and Controller is wired, it is the
+//       assumed wiring for this iteration.
 interface IDiamondControllerLike {
 
     function aave_withdraw(address aToken, uint256 amount) external returns (uint256);
@@ -15,7 +23,13 @@ interface IDiamondControllerLike {
 
     function transferAsset_transfer(address asset, address destination, uint256 amount) external;
 
+    function accessControls() external view returns (address);
+
     function usds_mint(uint256 usdsAmount) external;
+
+    function psm_psm() external view returns (address);
+
+    function psm_usdc() external view returns (address);
 
 }
 
@@ -25,14 +39,23 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
     /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
-    uint256 internal constant _USDS_CONVERSION_PRECISION = 1e12;
+    bytes32 internal constant _ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
+
+    /**********************************************************************************************/
+    /*** Declarations                                                                           ***/
+    /**********************************************************************************************/
+
+    address internal immutable _accessControls;
 
     /**********************************************************************************************/
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
     constructor(address admin_, address controller_, address penaltyRecipient_)
-        PermissionlessWithdrawals(admin_, controller_, penaltyRecipient_) {}
+        PermissionlessWithdrawals(admin_, controller_, penaltyRecipient_)
+    {
+        _accessControls = IDiamondControllerLike(controller).accessControls();
+    }
 
     /**********************************************************************************************/
     /*** Controller Interaction Hooks                                                           ***/
@@ -59,6 +82,18 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
     function _withdrawPSM(uint256 amount) internal override {
         IDiamondControllerLike(controller).usds_mint(amount * _USDS_CONVERSION_PRECISION);
         IDiamondControllerLike(controller).psm_swapUSDSToUSDC(amount);
+    }
+
+    function _getPSM() internal view override returns (address) {
+        return IDiamondControllerLike(controller).psm_psm();
+    }
+
+    function _getPSMUSDC() internal view override returns (address) {
+        return IDiamondControllerLike(controller).psm_usdc();
+    }
+
+    function _isRelayer() internal view override returns (bool) {
+        return IAccessControls(_accessControls).hasRole(_ALLOCATOR_ROLE, address(this));
     }
 
 }

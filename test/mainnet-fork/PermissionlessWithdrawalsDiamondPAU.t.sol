@@ -57,6 +57,11 @@ interface IDiamondControllerLike {
 
     function transferAsset_transfer(address asset, address destination, uint256 amount) external;
 
+    // Getters.
+    function psm_psm() external view returns (address);
+
+    function psm_usdc() external view returns (address);
+
 }
 
 interface IAccessControlsLike {
@@ -229,6 +234,14 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
     function _expectSharesBurnedTooHighRevert() internal override {
         vm.expectRevert("ERC4626Facet/shares-burned-too-high");
+    }
+
+    function _expectPSMCalled() internal override {
+        vm.expectCall(controller, abi.encodeWithSelector(IDiamondControllerLike.psm_psm.selector));
+    }
+
+    function _expectPSMUSDCCalled() internal override {
+        vm.expectCall(controller, abi.encodeWithSelector(IDiamondControllerLike.psm_usdc.selector));
     }
 
 }

@@ -17,6 +17,12 @@ interface ILegacyControllerLike {
         external
         returns (uint256);
 
+    function hasRole(bytes32 role, address account) external view returns (bool);
+
+    function psm() external view returns (address);
+
+    function usdc() external view returns (address);
+
 }
 
 contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
@@ -25,7 +31,7 @@ contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
     /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
-    uint256 internal constant _USDS_CONVERSION_PRECISION = 1e12;
+    bytes32 internal constant _RELAYER_ROLE = keccak256("RELAYER");
 
     /**********************************************************************************************/
     /*** Constructor                                                                            ***/
@@ -59,6 +65,18 @@ contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
     function _withdrawPSM(uint256 amount) internal override {
         ILegacyControllerLike(controller).mintUSDS(amount * _USDS_CONVERSION_PRECISION);
         ILegacyControllerLike(controller).swapUSDSToUSDC(amount);
+    }
+
+    function _getPSM() internal view override returns (address) {
+        return ILegacyControllerLike(controller).psm();
+    }
+
+    function _getPSMUSDC() internal view override returns (address) {
+        return ILegacyControllerLike(controller).usdc();
+    }
+
+    function _isRelayer() internal view override returns (bool) {
+        return ILegacyControllerLike(controller).hasRole(_RELAYER_ROLE, address(this));
     }
 
 }
