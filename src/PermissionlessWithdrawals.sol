@@ -84,7 +84,7 @@ abstract contract PermissionlessWithdrawals is
 
     mapping(address vault => VaultConfig config) _vaultConfigs;
 
-    mapping(address venue => uint256 maxSharesInRatio) _maxSharesInRatios;
+    mapping(address venue => uint256 maxSharesInRatio) _venueMaxSharesInRatios;
 
     /// @inheritdoc IPermissionlessWithdrawals
     address public override penaltyRecipient;
@@ -113,26 +113,25 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function setVaultConfig(address vault, uint256 penaltyAmount, bool whitelisted)
+    function setVaultConfig(address vault, uint256 maxExchangeRate, uint256 penaltyAmount)
         external
         override
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(vault != address(0), ZeroVaultAddress());
-        require(penaltyAmount > 0,   ZeroPenaltyAmount());
 
         VaultConfig storage vaultConfig = _vaultConfigs[vault];
 
         emit VaultConfigSet(
             vault,
-            vaultConfig.penaltyAmount = penaltyAmount,
-            vaultConfig.whitelisted   = whitelisted
+            vaultConfig.maxExchangeRate = maxExchangeRate,
+            vaultConfig.penaltyAmount = penaltyAmount
         );
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function setVenueType(address vault, address venue, VenueType venueType)
+    function setVaultVenueType(address vault, address venue, VenueType venueType)
         external
         override
         nonReentrant
@@ -163,7 +162,7 @@ abstract contract PermissionlessWithdrawals is
             IncorrectVenue()
         );
 
-        emit VenueTypeSet(vault, venue, _vaultConfigs[vault].venueTypes[venue] = venueType);
+        emit VaultVenueTypeSet(vault, venue, _vaultConfigs[vault].venueTypes[venue] = venueType);
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
@@ -177,13 +176,13 @@ abstract contract PermissionlessWithdrawals is
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function setMaxSharesInRatio(address venue, uint256 maxSharesInRatio)
+    function setVenueMaxSharesInRatio(address venue, uint256 maxSharesInRatio)
         external
         override
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        emit MaxSharesInRatioSet(venue, _maxSharesInRatios[venue] = maxSharesInRatio);
+        emit VenueMaxSharesInRatioSet(venue, _venueMaxSharesInRatios[venue] = maxSharesInRatio);
     }
 
     /**********************************************************************************************/
@@ -259,13 +258,19 @@ abstract contract PermissionlessWithdrawals is
         _revertIfControllerProxyMismatch();
         _revertIfNotRelayer();
 
-        require(_vaultConfigs[vault].whitelisted, VaultNotWhitelisted());
+        require(_vaultConfigs[vault].maxExchangeRate != 0, VaultNotWhitelisted());
 
         // Step 2: Calculate additional amount needed for user withdrawal.
 
         address asset = IERC4626Like(vault).asset();
 
-        uint256 assetsRequested      = IERC4626Like(vault).convertToAssets(shares);
+        uint256 assetsRequested = IERC4626Like(vault).convertToAssets(shares);
+
+        require(
+            assetsRequested * 1e18 <= shares * _vaultConfigs[vault].maxExchangeRate,
+            ExchangeRateTooHigh()
+        );
+
         uint256 proxyStartingBalance = IERC20Like(asset).balanceOf(proxy);
         uint256 vaultStartingBalance = IERC20Like(asset).balanceOf(vault);
 
@@ -345,7 +350,17 @@ abstract contract PermissionlessWithdrawals is
         override
         returns (bool isWhitelisted)
     {
-        return _vaultConfigs[vault].whitelisted;
+        return _vaultConfigs[vault].maxExchangeRate != 0;
+    }
+
+    /// @inheritdoc IPermissionlessWithdrawals
+    function getVaultMaxExchangeRate(address vault)
+        external
+        view
+        override
+        returns (uint256 maxExchangeRate)
+    {
+        return _vaultConfigs[vault].maxExchangeRate;
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
@@ -359,7 +374,7 @@ abstract contract PermissionlessWithdrawals is
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function getVenueType(address vault, address venue)
+    function getVaultVenueType(address vault, address venue)
         external
         view
         override
@@ -369,13 +384,13 @@ abstract contract PermissionlessWithdrawals is
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function getMaxSharesInRatio(address venue)
+    function getVenueMaxSharesInRatio(address venue)
         external
         view
         override
         returns (uint256 maxSharesInRatio)
     {
-        return _maxSharesInRatios[venue];
+        return _venueMaxSharesInRatios[venue];
     }
 
     /**********************************************************************************************/
@@ -396,7 +411,7 @@ abstract contract PermissionlessWithdrawals is
         }
 
         if (venueType == VenueType.ERC4626) {
-            return _withdrawERC4626(venue, amount, (amount * _maxSharesInRatios[venue]) / 1e18);
+            return _withdrawERC4626(venue, amount, (amount * _venueMaxSharesInRatios[venue]) / 1e18);
         }
 
         if (venueType == VenueType.PSM) {
