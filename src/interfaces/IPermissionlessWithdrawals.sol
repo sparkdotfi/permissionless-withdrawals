@@ -26,12 +26,13 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /**
      * @notice Configuration for a specific vault.
-     * @param  whitelisted   Whether the vault is enabled for permissionless withdrawals.
-     * @param  penaltyAmount The number of assets to be sent to the penalty recipient.
-     * @param  venueTypes    Mapping of venues to their type.
+     * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
+     *                         withdrawal.
+     * @param  penaltyAmount   The number of assets to be sent to the penalty recipient.
+     * @param  venueTypes      Mapping of venues to their type.
      */
     struct VaultConfig {
-        bool    whitelisted;
+        uint256 maxExchangeRate;
         uint256 penaltyAmount;
         mapping (address venue => VenueType venueType) venueTypes;
     }
@@ -42,6 +43,9 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /// @notice Thrown when the controller does not have the CONTROLLER role on the ALM proxy.
     error ControllerProxyMismatch();
+
+    /// @notice Thrown when the vault's exchange rate is too high.
+    error ExchangeRateTooHigh();
 
     /// @notice Thrown when a venue's underlying asset does not match the vault's asset.
     error IncorrectVenue();
@@ -67,7 +71,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      */
     error InsufficientAssetsInALMProxy(uint256 required, uint256 available);
 
-    /// @notice Thrown when the contract is not a relayer/allocator.
+    /// @notice Thrown when the contract is not a relayer/allocator of the controller.
     error NotRelayerOnController();
 
     /// @notice Thrown when the controller address is passed in as a token in recovery functions.
@@ -87,9 +91,6 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /// @notice Thrown when the controller address is zero during construction.
     error ZeroControllerAddress();
-
-    /// @notice Thrown when the penalty amount is zero during vault configuration.
-    error ZeroPenaltyAmount();
 
     /// @notice Thrown when the penalty recipient address is zero.
     error ZeroPenaltyRecipientAddress();
@@ -114,13 +115,10 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
 
     /**
-     * @notice Emitted when the admin sets the ratio for the maximum number of shares that can be
-     *         withdrawn from an ERC4626 venue given an amount of assets.
-     * @param  venue            Address of the venue that was configured.
-     * @param  maxSharesInRatio The ratio between the maximum number of shares and the amount of
-     *                          assets.
+     * @notice Emitted when the admin sets the penalty recipient.
+     * @param  penaltyRecipient The address of the penalty recipient.
      */
-    event MaxSharesInRatioSet(address indexed venue, uint256 maxSharesInRatio);
+    event PenaltyRecipientSet(address indexed penaltyRecipient);
 
     /**
      * @notice Emitted on a successful permissionless withdrawal.
@@ -144,11 +142,12 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /**
      * @notice Emitted when the admin sets a vault's configuration.
-     * @param  vault         Address of the vault being configured.
-     * @param  penaltyAmount The number of assets to be sent to the penalty recipient.
-     * @param  whitelisted   Whether the vault is now whitelisted.
+     * @param  vault           Address of the vault being configured.
+     * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
+     *                         withdrawal.
+     * @param  penaltyAmount   The number of assets to be sent to the penalty recipient.
      */
-    event VaultConfigSet(address indexed vault, uint256 penaltyAmount, bool whitelisted);
+    event VaultConfigSet(address indexed vault, uint256 maxExchangeRate, uint256 penaltyAmount);
 
     /**
      * @notice Emitted when the admin sets the type of a venue for a vault.
@@ -156,41 +155,44 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @param  venue     Address of the venue being configured.
      * @param  venueType The type of venue being configured.
      */
-    event VenueTypeSet(address indexed vault, address indexed venue, VenueType indexed venueType);
+    event VaultVenueTypeSet(
+        address   indexed vault,
+        address   indexed venue,
+        VenueType indexed venueType
+    );
 
     /**
-     * @notice Emitted when the admin sets the penalty recipient.
-     * @param  penaltyRecipient The address of the penalty recipient.
+     * @notice Emitted when the admin sets the ratio for the maximum number of shares that can be
+     *         withdrawn from an ERC4626 venue given an amount of assets.
+     * @param  venue            Address of the venue that was configured.
+     * @param  maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
+     *                          withdraw from an ERC4626 venue.
      */
-    event PenaltyRecipientSet(address indexed penaltyRecipient);
+    event VenueMaxSharesInRatioSet(address indexed venue, uint256 maxSharesInRatio);
 
     /**********************************************************************************************/
     /*** Interactive Admin Functions                                                            ***/
     /**********************************************************************************************/
 
     /**
-     * @notice Updates the ratio (taking the asset-to-share decimal ratio into account) for the
-     *         maximum number of shares that can be withdrawn from an ERC4626 venue given an amount
-     *         of assets.
+     * @notice Sets the penalty recipient.
      *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
-     * @dev    A `maxSharesInRatio` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
-     *         same decimal places, however if, for example, the asset has 6 decimals and the shares
-     *         have 18 decimals, then 1e30 is 100% (`1e18 * (1e18 / 1e6)`).
-     * @param  venue            Address of the venue to configure.
-     * @param  maxSharesInRatio The ratio between the maximum number of shares and the amount of
-     *                           assets.
+     * @dev    Reverts if penaltyRecipient is zero.
+     * @param  recipient The address of the penalty recipient.
      */
-    function setMaxSharesInRatio(address venue, uint256 maxSharesInRatio) external;
+    function setPenaltyRecipient(address recipient) external;
 
     /**
      * @notice Updates the configuration for a given vault.
      *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      * @dev    Reverts if penaltyAmount is zero.
-     * @param  vault         Address of the vault to configure.
-     * @param  penaltyAmount The number of assets to be sent to the penalty recipient.
-     * @param  whitelisted   Whether the vault should be whitelisted.
+     * @param  vault           Address of the vault to configure.
+     * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
+     *                         withdrawal. If set to 0, the vault is effectively disabled for
+     *                         permissionless withdrawals.
+     * @param  penaltyAmount   The number of assets to be sent to the penalty recipient.
      */
-    function setVaultConfig(address vault, uint256 penaltyAmount, bool whitelisted) external;
+    function setVaultConfig(address vault, uint256 maxExchangeRate, uint256 penaltyAmount) external;
 
     /**
      * @notice Sets the type of a given venue.
@@ -201,27 +203,21 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @param  venue     Address of the venue to set the type of.
      * @param  venueType The type of venue to set.
      */
-    function setVenueType(address vault, address venue, VenueType venueType) external;
+    function setVaultVenueType(address vault, address venue, VenueType venueType) external;
 
     /**
-     * @notice Sets the penalty recipient.
+     * @notice Updates the maximum units of shares to redeem for 1e18 units of assets to withdraw
+     *         from an ERC4626 venue.
      *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
-     * @dev    Reverts if penaltyRecipient is zero.
-     * @param  recipient The address of the penalty recipient.
+     * @param  venue            Address of the venue to configure.
+     * @param  maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
+     *                          withdraw from an ERC4626 venue.
      */
-    function setPenaltyRecipient(address recipient) external;
+    function setVenueMaxSharesInRatio(address venue, uint256 maxSharesInRatio) external;
 
     /**********************************************************************************************/
     /*** Asset Recovery Functions                                                               ***/
     /**********************************************************************************************/
-
-    /**
-     * @notice Recovers ETH stuck in this contract.
-     *          Can only be called by accounts with DEFAULT_ADMIN_ROLE.
-     * @dev    Reverts if recipient is zero. Transfers all ETH in this contract to the recipient.
-     * @param  recipient Address that receives the ETH.
-     */
-    function recoverETH(address recipient) external;
 
     /**
      * @notice Recovers ERC20 tokens stuck in this contract.
@@ -244,6 +240,14 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      */
     function recoverERC721(address token, address recipient, uint256 tokenId) external payable;
 
+    /**
+     * @notice Recovers ETH stuck in this contract.
+     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     * @dev    Reverts if recipient is zero. Transfers all ETH in this contract to the recipient.
+     * @param  recipient Address that receives the ETH.
+     */
+    function recoverETH(address recipient) external;
+
     /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
     /**********************************************************************************************/
@@ -251,8 +255,8 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      * @notice Redeems the caller's vault shares, sourcing any shortfall from a venue.
      *         Anyone holding shares can call this and always pays the vault's fixed penalty.
-     * @dev    Runs under nonReentrant. The caller must approve `shares` to this contract first.
-     *         The shortfall is pulled from the venue through the controller using this contract's
+     * @dev    Runs under nonReentrant. The caller must approve `shares` to this contract first. The
+     *         shortfall is pulled from the venue through the controller using this contract's
      *         relayer role. Reverts if the redeemed assets cannot cover the penalty.
      * @param  vault                 Address of the vault to withdraw from.
      * @param  venue                 Address of the venue to source the shortfall from if necessary.
@@ -293,20 +297,19 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
 
     /**
-     * @notice Returns the ratio between the maximum number of shares that can be withdrawn from a
-     *         given ERC4626 venue and the amount of assets.
-     * @param  venue            Address of the venue to query.
-     * @return maxSharesInRatio The ratio between the maximum number of shares and the amount of
-     *                          assets.
-     */
-    function getMaxSharesInRatio(address venue) external view returns (uint256 maxSharesInRatio);
-
-    /**
      * @notice Returns whether a vault is whitelisted for permissionless withdrawals.
      * @param  vault         Address of the vault to query.
      * @return isWhitelisted Whether the vault is whitelisted.
      */
     function getVaultIsWhitelisted(address vault) external view returns (bool isWhitelisted);
+
+    /**
+     * @notice Returns the maximum exchange rate for a given vault.
+     * @param  vault           Address of the vault to query.
+     * @return maxExchangeRate The maximum units of asset per 1e18 share units requested for
+     *                         withdrawal.
+     */
+    function getVaultMaxExchangeRate(address vault) external view returns (uint256 maxExchangeRate);
 
     /**
      * @notice Returns the penalty amount for a given vault.
@@ -321,6 +324,21 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @param  venue     Address of the venue to query.
      * @return venueType The venue type, or `UNSET` if unset.
      */
-    function getVenueType(address vault, address venue) external view returns (VenueType venueType);
+    function getVaultVenueType(address vault, address venue)
+        external
+        view
+        returns (VenueType venueType);
+
+    /**
+     * @notice Returns the maximum units of shares to redeem for 1e18 units of assets to withdraw
+     *         from an ERC4626 venue.
+     * @param  venue            Address of the venue to query.
+     * @return maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
+     *                          withdraw from an ERC4626 venue.
+     */
+    function getVenueMaxSharesInRatio(address venue)
+        external
+        view
+        returns (uint256 maxSharesInRatio);
 
 }

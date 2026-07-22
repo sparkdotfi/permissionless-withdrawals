@@ -119,13 +119,13 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         vm.startPrank(admin);
 
-        withdrawals.setVaultConfig(SP_ETH_VAULT,  SPETH_PENALTY_AMOUNT,  true);
-        withdrawals.setVaultConfig(SP_USDC_VAULT, SPUSDC_PENALTY_AMOUNT, true);
-        withdrawals.setVaultConfig(SP_USDT_VAULT, SPUSDT_PENALTY_AMOUNT, true);
+        withdrawals.setVaultConfig(SP_ETH_VAULT,  10e18, SPETH_PENALTY_AMOUNT);
+        withdrawals.setVaultConfig(SP_USDC_VAULT, 10e18, SPUSDC_PENALTY_AMOUNT);
+        withdrawals.setVaultConfig(SP_USDT_VAULT, 10e18, SPUSDT_PENALTY_AMOUNT);
 
-        withdrawals.setVenueType(SP_ETH_VAULT,  SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.PSM,           IPermissionlessWithdrawals.VenueType.PSM);
-        withdrawals.setVenueType(SP_USDT_VAULT, SparkLend.USDT_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT,  SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.PSM,           IPermissionlessWithdrawals.VenueType.PSM);
+        withdrawals.setVaultVenueType(SP_USDT_VAULT, SparkLend.USDT_SPTOKEN, IPermissionlessWithdrawals.VenueType.AAVE);
 
         vm.stopPrank();
     }
@@ -301,7 +301,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
     function test_setVaultConfig_reentrancy() external {
         _setWithdrawalsEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        withdrawals.setVaultConfig(address(0), 0, true);
+        withdrawals.setVaultConfig(address(0), 0, 0);
     }
 
     function test_setVaultConfig_unauthorized() external {
@@ -311,81 +311,78 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
             DEFAULT_ADMIN_ROLE
         ));
         vm.prank(unauthorized);
-        withdrawals.setVaultConfig(address(0), 0, true);
+        withdrawals.setVaultConfig(address(0), 0, 0);
     }
 
     function test_setVaultConfig_zeroVaultAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
         vm.prank(admin);
-        withdrawals.setVaultConfig(address(0), 0, true);
-    }
-
-    function test_setVaultConfig_zeroPenaltyAmount() external {
-        vm.expectRevert(IPermissionlessWithdrawals.ZeroPenaltyAmount.selector);
-        vm.prank(admin);
-        withdrawals.setVaultConfig(SP_ETH_VAULT, 0, true);
+        withdrawals.setVaultConfig(address(0), 0, 0);
     }
 
     function test_setVaultConfig() external {
         address newVault = makeAddr("newVault");
 
-        assertEq(withdrawals.getVaultIsWhitelisted(newVault), false);
-        assertEq(withdrawals.getVaultPenaltyAmount(newVault), 0);
+        assertEq(withdrawals.getVaultIsWhitelisted(newVault),   false);
+        assertEq(withdrawals.getVaultMaxExchangeRate(newVault), 0);
+        assertEq(withdrawals.getVaultPenaltyAmount(newVault),   0);
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VaultConfigSet(newVault, 50e18, true);
+        emit IPermissionlessWithdrawals.VaultConfigSet(newVault, 10e18, 50e18);
 
         vm.prank(admin);
-        withdrawals.setVaultConfig(newVault, 50e18, true);
+        withdrawals.setVaultConfig(newVault, 10e18, 50e18);
 
-        assertEq(withdrawals.getVaultIsWhitelisted(newVault), true);
-        assertEq(withdrawals.getVaultPenaltyAmount(newVault), 50e18);
+        assertEq(withdrawals.getVaultIsWhitelisted(newVault),   true);
+        assertEq(withdrawals.getVaultMaxExchangeRate(newVault), 10e18);
+        assertEq(withdrawals.getVaultPenaltyAmount(newVault),   50e18);
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VaultConfigSet(newVault, 50e18, false);
+        emit IPermissionlessWithdrawals.VaultConfigSet(newVault, 0, 100e18);
 
         vm.prank(admin);
-        withdrawals.setVaultConfig(newVault, 50e18, false);
+        withdrawals.setVaultConfig(newVault, 0, 100e18);
 
-        assertEq(withdrawals.getVaultIsWhitelisted(newVault), false);
-        assertEq(withdrawals.getVaultPenaltyAmount(newVault), 50e18);
+        assertEq(withdrawals.getVaultIsWhitelisted(newVault),   false);
+        assertEq(withdrawals.getVaultMaxExchangeRate(newVault), 0);
+        assertEq(withdrawals.getVaultPenaltyAmount(newVault),   100e18);
     }
 
     /**********************************************************************************************/
-    /*** setVenueType tests                                                                     ***/
+    /*** setVaultVenueType tests                                                                ***/
     /**********************************************************************************************/
 
-    function test_setVenueType_reentrancy() external {
+    function test_setVaultVenueType_reentrancy() external {
         _setWithdrawalsEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.UNSET);
     }
 
-    function test_setVenueType_unauthorized() external {
+    function test_setVaultVenueType_unauthorized() external {
         vm.expectRevert(abi.encodeWithSelector(
             IAccessControl.AccessControlUnauthorizedAccount.selector,
             unauthorized,
             DEFAULT_ADMIN_ROLE
         ));
         vm.prank(unauthorized);
-        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.UNSET);
     }
 
-    function test_setVenueType_zeroVaultAddress() external {
+    function test_setVaultVenueType_zeroVaultAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVaultAddress.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(address(0), address(0), IPermissionlessWithdrawals.VenueType.UNSET);
     }
 
-    function test_setVenueType_zeroVenueAddress() external {
+    function test_setVaultVenueType_zeroVenueAddress() external {
         vm.expectRevert(IPermissionlessWithdrawals.ZeroVenueAddress.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(SP_ETH_VAULT, address(0), IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT, address(0), IPermissionlessWithdrawals.VenueType.UNSET);
     }
 
-    function test_setVenueType_outOfRangeVenueType() external {
+    function test_setVaultVenueType_outOfRangeVenueType() external {
         bytes memory badCall = abi.encodeWithSelector(
-            IPermissionlessWithdrawals.setVenueType.selector,
+            IPermissionlessWithdrawals.setVaultVenueType.selector,
             SP_ETH_VAULT,
             SparkLend.WETH_SPTOKEN,
             uint8(4)        // Out-of-range VenueType
@@ -400,25 +397,25 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         assertEq(returnData.length, 0);
     }
 
-    function test_setVenueType_incorrectVenue() external {
+    function test_setVaultVenueType_incorrectVenue() external {
         vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(SP_ETH_VAULT, Ethereum.ATOKEN_CORE_USDC, IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT, Ethereum.ATOKEN_CORE_USDC, IPermissionlessWithdrawals.VenueType.AAVE);
 
         vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(SP_ETH_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         vm.expectRevert(IPermissionlessWithdrawals.IncorrectVenue.selector);
         vm.prank(admin);
-        withdrawals.setVenueType(SP_ETH_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.PSM);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.PSM);
     }
 
-    function test_setVenueType() external {
+    function test_setVaultVenueType() external {
         // Setting the type of the venue to AAVE.
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC)),
             uint256(IPermissionlessWithdrawals.VenueType.UNSET)
         );
 
@@ -428,24 +425,24 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueTypeSet(
+        emit IPermissionlessWithdrawals.VaultVenueTypeSet(
             SP_USDC_VAULT,
             Ethereum.ATOKEN_CORE_USDC,
             IPermissionlessWithdrawals.VenueType.AAVE
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC, IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC, IPermissionlessWithdrawals.VenueType.AAVE);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.ATOKEN_CORE_USDC)),
             uint256(IPermissionlessWithdrawals.VenueType.AAVE)
         );
 
         // Setting the type of the venue to ERC4626.
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC)),
             uint256(IPermissionlessWithdrawals.VenueType.UNSET)
         );
 
@@ -455,39 +452,39 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         );
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueTypeSet(
+        emit IPermissionlessWithdrawals.VaultVenueTypeSet(
             SP_USDC_VAULT,
             Ethereum.MORPHO_VAULT_USDC_BC,
             IPermissionlessWithdrawals.VenueType.ERC4626
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC)),
             uint256(IPermissionlessWithdrawals.VenueType.ERC4626)
         );
 
         // Resetting the type of the venue to UNSET (disabled).
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.PSM)),
             uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueTypeSet(
+        emit IPermissionlessWithdrawals.VaultVenueTypeSet(
             SP_USDC_VAULT,
             Ethereum.PSM,
             IPermissionlessWithdrawals.VenueType.UNSET
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.UNSET);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.PSM)),
             uint256(IPermissionlessWithdrawals.VenueType.UNSET)
         );
 
@@ -497,63 +494,63 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         _expectPSMUSDCCalled();
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.VenueTypeSet(
+        emit IPermissionlessWithdrawals.VaultVenueTypeSet(
             SP_USDC_VAULT,
             Ethereum.PSM,
             IPermissionlessWithdrawals.VenueType.PSM
         );
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.PSM);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.PSM, IPermissionlessWithdrawals.VenueType.PSM);
 
         assertEq(
-            uint256(withdrawals.getVenueType(SP_USDC_VAULT, Ethereum.PSM)),
+            uint256(withdrawals.getVaultVenueType(SP_USDC_VAULT, Ethereum.PSM)),
             uint256(IPermissionlessWithdrawals.VenueType.PSM)
         );
     }
 
     /**********************************************************************************************/
-    /*** setMaxSharesInRatio tests                                                              ***/
+    /*** setVenueMaxSharesInRatio tests                                                         ***/
     /**********************************************************************************************/
 
-    function test_setMaxSharesInRatio_reentrancy() external {
+    function test_setVenueMaxSharesInRatio_reentrancy() external {
         _setWithdrawalsEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        withdrawals.setMaxSharesInRatio(address(0), 0);
+        withdrawals.setVenueMaxSharesInRatio(address(0), 0);
     }
 
-    function test_setMaxSharesInRatio_unauthorized() external {
+    function test_setVenueMaxSharesInRatio_unauthorized() external {
         vm.expectRevert(abi.encodeWithSelector(
             IAccessControl.AccessControlUnauthorizedAccount.selector,
             unauthorized,
             DEFAULT_ADMIN_ROLE
         ));
         vm.prank(unauthorized);
-        withdrawals.setMaxSharesInRatio(address(0), 0);
+        withdrawals.setVenueMaxSharesInRatio(address(0), 0);
     }
 
-    function test_setMaxSharesInRatio() external {
+    function test_setVenueMaxSharesInRatio() external {
         address venue = makeAddr("venue");
 
-        assertEq(withdrawals.getMaxSharesInRatio(venue), 0);
+        assertEq(withdrawals.getVenueMaxSharesInRatio(venue), 0);
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.MaxSharesInRatioSet(venue, 1e18);
+        emit IPermissionlessWithdrawals.VenueMaxSharesInRatioSet(venue, 1e18);
 
         vm.prank(admin);
-        withdrawals.setMaxSharesInRatio(venue, 1e18);
+        withdrawals.setVenueMaxSharesInRatio(venue, 1e18);
 
-        assertEq(withdrawals.getMaxSharesInRatio(venue), 1e18);
+        assertEq(withdrawals.getVenueMaxSharesInRatio(venue), 1e18);
 
         // Setting the max shares in ratio to 0 is permitted.
 
         vm.expectEmit(address(withdrawals));
-        emit IPermissionlessWithdrawals.MaxSharesInRatioSet(venue, 0);
+        emit IPermissionlessWithdrawals.VenueMaxSharesInRatioSet(venue, 0);
 
         vm.prank(admin);
-        withdrawals.setMaxSharesInRatio(venue, 0);
+        withdrawals.setVenueMaxSharesInRatio(venue, 0);
 
-        assertEq(withdrawals.getMaxSharesInRatio(venue), 0);
+        assertEq(withdrawals.getVenueMaxSharesInRatio(venue), 0);
     }
 
     /**********************************************************************************************/
@@ -839,11 +836,31 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // A previously whitelisted vault that has been de-whitelisted also reverts.
 
         vm.prank(admin);
-        withdrawals.setVaultConfig(SP_ETH_VAULT, SPETH_PENALTY_AMOUNT, false);
+        withdrawals.setVaultConfig(SP_ETH_VAULT, 0, SPETH_PENALTY_AMOUNT);
 
         vm.expectRevert(IPermissionlessWithdrawals.VaultNotWhitelisted.selector);
         vm.prank(user);
         withdrawals.permissionlessWithdraw(SP_ETH_VAULT, venue, recipient, 1, 0);
+    }
+
+    function test_permissionlessWithdraw_exchangeRateTooHighBoundary() external {
+        uint256 shares       = 100e18;
+        uint256 exchangeRate = 1.009812906624833965e18;
+
+        _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
+
+        vm.prank(admin);
+        withdrawals.setVaultConfig(SP_ETH_VAULT, exchangeRate - 1, SPETH_PENALTY_AMOUNT);
+
+        vm.expectRevert(IPermissionlessWithdrawals.ExchangeRateTooHigh.selector);
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares, 0);
+
+        vm.prank(admin);
+        withdrawals.setVaultConfig(SP_ETH_VAULT, exchangeRate, SPETH_PENALTY_AMOUNT);
+
+        vm.prank(user);
+        withdrawals.permissionlessWithdraw(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, recipient, shares, 0);
     }
 
     function test_permissionlessWithdraw_venueTypeNotSet() external {
@@ -856,7 +873,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         // A previously configured venue whose type has been reset to UNSET also reverts.
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.UNSET);
 
         vm.expectRevert(IPermissionlessWithdrawals.VenueTypeNotSet.selector);
         vm.prank(user);
@@ -873,7 +890,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         deal(USDC, proxy,         0);
 
         vm.prank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
 
         // maxSharesInRatio is not set, so the shares burned is too high, so the call reverts.
         _expectSharesBurnedTooHighRevert();
@@ -882,14 +899,14 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // maxSharesInRatio is set to a tighter value, so the shares burned is higher than the boundary, so the call reverts.
         vm.prank(admin);
-        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 0.9e18 * 1e12);
+        withdrawals.setVenueMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 0.9e18 * 1e12);
 
         _expectSharesBurnedTooHighRevert();
         vm.prank(user);
         withdrawals.permissionlessWithdraw(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, recipient, shares, 0);
     }
 
-    function test_permissionlessWithdraw_sll_rateLimitExceeded() external {
+    function test_permissionlessWithdraw_rateLimitExceeded() external {
         uint256 shares = 1_000_000_000e6;
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1506,8 +1523,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.startPrank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
-        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVenueMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
         vm.stopPrank();
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1788,8 +1805,8 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Whitelist the USDC ERC4626 venue (setUp uses the PSM venue for USDC).
         vm.startPrank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
-        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVenueMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
         vm.stopPrank();
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, shares);
@@ -1933,9 +1950,9 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Whitelist the ERC4626 and Aave (spToken) USDC venues. The PSM venue is whitelisted in setUp.
         vm.startPrank(admin);
-        withdrawals.setVenueType(SP_USDC_VAULT, SparkLend.USDC_SPTOKEN,        IPermissionlessWithdrawals.VenueType.AAVE);
-        withdrawals.setVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
-        withdrawals.setMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, SparkLend.USDC_SPTOKEN,        IPermissionlessWithdrawals.VenueType.AAVE);
+        withdrawals.setVaultVenueType(SP_USDC_VAULT, Ethereum.MORPHO_VAULT_USDC_BC, IPermissionlessWithdrawals.VenueType.ERC4626);
+        withdrawals.setVenueMaxSharesInRatio(Ethereum.MORPHO_VAULT_USDC_BC, 1.1e18 * 1e12);
         vm.stopPrank();
 
         _mintSharesAndApprove(SP_USDC_VAULT, USDC, totalShares);
@@ -2102,7 +2119,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         // Unset the venue so that, if it is ever reached, the withdrawal reverts.
         vm.prank(admin);
-        withdrawals.setVenueType(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.UNSET);
+        withdrawals.setVaultVenueType(SP_ETH_VAULT, SparkLend.WETH_SPTOKEN, IPermissionlessWithdrawals.VenueType.UNSET);
 
         // The venue withdrawal is reached but unset, so the call reverts before any venue interaction.
         if (assetsToWithdraw > 0) {
@@ -2165,7 +2182,7 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         penaltyAmount = bound(penaltyAmount, 1, assets * 2);
 
         vm.prank(admin);
-        withdrawals.setVaultConfig(SP_ETH_VAULT, penaltyAmount, true);
+        withdrawals.setVaultConfig(SP_ETH_VAULT, 10e18, penaltyAmount);
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
