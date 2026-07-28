@@ -73,10 +73,6 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
         ILegacyControllerLike(controller).removeRelayer(account);
     }
 
-    function _relayerRole() internal view override returns (bytes32) {
-        return ILegacyControllerLike(controller).RELAYER();
-    }
-
     /**********************************************************************************************/
     /*** Controller call expectation hooks                                                      ***/
     /**********************************************************************************************/

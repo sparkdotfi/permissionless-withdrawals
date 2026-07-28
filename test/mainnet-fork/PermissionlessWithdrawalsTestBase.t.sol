@@ -250,8 +250,6 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function _revokeRelayerRole(address account) internal virtual;
 
-    function _relayerRole() internal view virtual returns (bytes32);
-
     /**********************************************************************************************/
     /*** constructor tests                                                                      ***/
     /**********************************************************************************************/
