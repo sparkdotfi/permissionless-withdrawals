@@ -29,6 +29,10 @@ interface ILegacyControllerLike {
         external
         returns (uint256 shares);
 
+    function psm() external view returns (address);
+
+    function usdc() external view returns (address);
+
 }
 
 // Runs the full fork scenario suite against the live legacy controller (Ethereum.ALM_CONTROLLER)
@@ -67,10 +71,6 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
     function _revokeRelayerRole(address account) internal override {
         vm.prank(freezer);
         ILegacyControllerLike(controller).removeRelayer(account);
-    }
-
-    function _relayerRole() internal view override returns (bytes32) {
-        return ILegacyControllerLike(controller).RELAYER();
     }
 
     /**********************************************************************************************/
@@ -119,6 +119,14 @@ contract PermissionlessWithdrawalsLegacyPAUForkTest is PermissionlessWithdrawals
 
     function _expectSharesBurnedTooHighRevert() internal override {
         vm.expectRevert("MC/shares-burned-too-high");
+    }
+
+    function _expectPSMCalled() internal override {
+        vm.expectCall(controller, abi.encodeWithSelector(ILegacyControllerLike.psm.selector));
+    }
+
+    function _expectPSMUSDCCalled() internal override {
+        vm.expectCall(controller, abi.encodeWithSelector(ILegacyControllerLike.usdc.selector));
     }
 
 }

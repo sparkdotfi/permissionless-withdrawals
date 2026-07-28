@@ -13,6 +13,20 @@ import {
     PermissionlessWithdrawalsTestBase
 } from "./PermissionlessWithdrawalsTestBase.t.sol";
 
+interface IAdministeredAgentFactoryLike {
+
+    function deploy(address admin) external returns (address);
+
+}
+
+interface IAdministeredAgentLike {
+
+    function addActor(address account) external;
+
+    function removeActor(address account) external;
+
+}
+
 interface IPAUFactoryLike {
 
     function deployAccessControls(address admin) external returns (address);
@@ -57,6 +71,11 @@ interface IDiamondControllerLike {
 
     function transferAsset_transfer(address asset, address destination, uint256 amount) external;
 
+    // Getters.
+    function psm_psm() external view returns (address);
+
+    function psm_usdc() external view returns (address);
+
 }
 
 interface IAccessControlsLike {
@@ -90,14 +109,12 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     bytes32 internal constant ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
 
     address internal accessControls;
+    address internal administeredAgent;
 
-    function setUp() public override {
-        IPAUFactoryLike factory = IPAUFactoryLike(SkyPAU.PAU_FACTORY);
+    function setUp() public override {// Deploy a fresh AccessControls and Controller pointed at the live ALMProxy and RateLimits.
+        accessControls = IPAUFactoryLike(SkyPAU.PAU_FACTORY).deployAccessControls(Ethereum.SPARK_PROXY);
 
-        // Deploy a fresh AccessControls and Controller pointed at the live ALMProxy and RateLimits.
-        accessControls = factory.deployAccessControls(Ethereum.SPARK_PROXY);
-
-        controller = factory.deployController(
+        controller = IPAUFactoryLike(SkyPAU.PAU_FACTORY).deployController(
             accessControls,
             Ethereum.ALM_PROXY,
             Ethereum.ALM_RATE_LIMITS
@@ -111,6 +128,8 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         ids[2] = "PSM_FACET";
         ids[3] = "USDS_FACET";
         ids[4] = "TRANSFER_ASSET_FACET";
+
+        administeredAgent = IAdministeredAgentFactoryLike(SkyPAU.ADMINISTERED_AGENT_FACTORY).deploy(Ethereum.SPARK_PROXY);
 
         vm.startPrank(Ethereum.SPARK_PROXY);
 
@@ -129,6 +148,8 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
         _configureRateLimits(IDiamondControllerLike(controller), IRateLimitsLike(Ethereum.ALM_RATE_LIMITS));
 
+        IAccessControlsLike(accessControls).grantRole(ALLOCATOR_ROLE, administeredAgent);
+
         vm.stopPrank();
 
         super.setUp();
@@ -143,7 +164,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         override
         returns (address)
     {
-        return address(new PermissionlessWithdrawalsDiamondPAU(admin_, controller_, penaltyRecipient_));
+        return address(new PermissionlessWithdrawalsDiamondPAU(admin_, controller_, penaltyRecipient_, administeredAgent));
     }
 
     function _proxy() internal pure override returns (address) {
@@ -155,16 +176,12 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     //       hooks grant, revoke, and return ALLOCATOR_ROLE.
     function _grantRelayerRole(address account) internal override {
         vm.prank(Ethereum.SPARK_PROXY);
-        IAccessControlsLike(accessControls).grantRole(ALLOCATOR_ROLE, account);
+        IAdministeredAgentLike(administeredAgent).addActor(account);
     }
 
     function _revokeRelayerRole(address account) internal override {
         vm.prank(Ethereum.SPARK_PROXY);
-        IAccessControlsLike(accessControls).revokeRole(ALLOCATOR_ROLE, account);
-    }
-
-    function _relayerRole() internal pure override returns (bytes32) {
-        return ALLOCATOR_ROLE;
+        IAdministeredAgentLike(administeredAgent).removeActor(account);
     }
 
     // Sets every rate-limit key the stories consume. Everything is unlimited except the PSM.
@@ -229,6 +246,14 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
     function _expectSharesBurnedTooHighRevert() internal override {
         vm.expectRevert("ERC4626Facet/shares-burned-too-high");
+    }
+
+    function _expectPSMCalled() internal override {
+        vm.expectCall(controller, abi.encodeWithSelector(IDiamondControllerLike.psm_psm.selector));
+    }
+
+    function _expectPSMUSDCCalled() internal override {
+        vm.expectCall(controller, abi.encodeWithSelector(IDiamondControllerLike.psm_usdc.selector));
     }
 
 }

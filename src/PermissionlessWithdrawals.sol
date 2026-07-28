@@ -58,12 +58,6 @@ interface IERC4626Like {
 
 }
 
-interface IPSMLike {
-
-    function gem() external view returns (address);
-
-}
-
 abstract contract PermissionlessWithdrawals is
     IPermissionlessWithdrawals,
     AccessControlEnumerable,
@@ -71,6 +65,12 @@ abstract contract PermissionlessWithdrawals is
 {
 
     using SafeERC20 for IERC20;
+
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
+    uint256 internal constant _USDS_CONVERSION_PRECISION = 1e12;
 
     /**********************************************************************************************/
     /*** Declarations                                                                           ***/
@@ -84,7 +84,7 @@ abstract contract PermissionlessWithdrawals is
 
     mapping(address vault => VaultConfig config) _vaultConfigs;
 
-    mapping(address venue => uint256 maxSharesInRatio) _maxSharesInRatios;
+    mapping(address venue => uint256 maxSharesInRatio) _venueMaxSharesInRatios;
 
     /// @inheritdoc IPermissionlessWithdrawals
     address public override penaltyRecipient;
@@ -94,17 +94,18 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     constructor(address admin_, address controller_, address penaltyRecipient_) {
-        require(admin_            != address(0), ZeroAdminAddress());
-        require(controller_       != address(0), ZeroControllerAddress());
-        require(penaltyRecipient_ != address(0), ZeroPenaltyRecipientAddress());
+        require(admin_      != address(0), ZeroAdminAddress());
+        require(controller_ != address(0), ZeroControllerAddress());
+
+        _setPenaltyRecipient(penaltyRecipient_);
 
         proxy = IControllerLike(controller = controller_).proxy();
 
+        // NOTE: Not calling `_revertIfNotRelayer` here to simplify deployment as this contract's
+        //       address will be needed before granting it the relayer/allocator role.
         _revertIfControllerProxyMismatch();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
-
-        penaltyRecipient = penaltyRecipient_;
     }
 
     /**********************************************************************************************/
@@ -112,26 +113,25 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function setVaultConfig(address vault, uint256 penaltyAmount, bool whitelisted)
+    function setVaultConfig(address vault, uint256 maxExchangeRate, uint256 penaltyAmount)
         external
         override
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(vault != address(0), ZeroVaultAddress());
-        require(penaltyAmount > 0,   ZeroPenaltyAmount());
 
         VaultConfig storage vaultConfig = _vaultConfigs[vault];
 
         emit VaultConfigSet(
             vault,
-            vaultConfig.penaltyAmount = penaltyAmount,
-            vaultConfig.whitelisted   = whitelisted
+            vaultConfig.maxExchangeRate = maxExchangeRate,
+            vaultConfig.penaltyAmount = penaltyAmount
         );
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function setVenueType(address vault, address venue, VenueType venueType)
+    function setVaultVenueType(address vault, address venue, VenueType venueType)
         external
         override
         nonReentrant
@@ -140,26 +140,29 @@ abstract contract PermissionlessWithdrawals is
         require(vault != address(0), ZeroVaultAddress());
         require(venue != address(0), ZeroVenueAddress());
 
-        address asset = IERC4626Like(vault).asset();
+        // NOTE: The asset of the venue is not checked against the asset of the vault after being
+        //       set here, since transfers will fail anyway in `permissionlessWithdraw` if the
+        //       assets are not equal.
 
         require(
-            venueType == VenueType.NONE ||
+            venueType == VenueType.UNSET ||
             (
                 venueType == VenueType.AAVE &&
-                IATokenLike(venue).UNDERLYING_ASSET_ADDRESS() == asset
+                IATokenLike(venue).UNDERLYING_ASSET_ADDRESS() == IERC4626Like(vault).asset()
             ) ||
             (
                 venueType == VenueType.ERC4626 &&
-                IERC4626Like(venue).asset() == asset
+                IERC4626Like(venue).asset() == IERC4626Like(vault).asset()
             ) ||
             (
                 venueType == VenueType.PSM &&
-                IPSMLike(venue).gem() == asset
+                venue == _getPSM() &&
+                _getPSMUSDC() == IERC4626Like(vault).asset()
             ),
             IncorrectVenue()
         );
 
-        emit VenueTypeSet(vault, venue, _vaultConfigs[vault].venueTypes[venue] = venueType);
+        emit VaultVenueTypeSet(vault, venue, _vaultConfigs[vault].venueTypes[venue] = venueType);
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
@@ -169,19 +172,17 @@ abstract contract PermissionlessWithdrawals is
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(recipient != address(0), ZeroPenaltyRecipientAddress());
-
-        emit PenaltyRecipientSet(penaltyRecipient = recipient);
+        _setPenaltyRecipient(recipient);
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function setMaxSharesInRatio(address venue, uint256 maxSharesInRatio)
+    function setVenueMaxSharesInRatio(address venue, uint256 maxSharesInRatio)
         external
         override
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        emit MaxSharesInRatioSet(venue, _maxSharesInRatios[venue] = maxSharesInRatio);
+        emit VenueMaxSharesInRatioSet(venue, _venueMaxSharesInRatios[venue] = maxSharesInRatio);
     }
 
     /**********************************************************************************************/
@@ -196,6 +197,7 @@ abstract contract PermissionlessWithdrawals is
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(recipient != address(0), ZeroRecipientAddress());
+        require(recipient != controller, RecipientIsController());
 
         ( bool success, ) = recipient.call{value : address(this).balance}("");
 
@@ -211,6 +213,7 @@ abstract contract PermissionlessWithdrawals is
     {
         require(token     != address(0), ZeroTokenAddress());
         require(recipient != address(0), ZeroRecipientAddress());
+        require(token     != controller, TokenIsController());
 
         IERC20(token).safeTransfer(recipient, IERC20Like(token).balanceOf(address(this)));
     }
@@ -225,6 +228,7 @@ abstract contract PermissionlessWithdrawals is
     {
         require(token     != address(0), ZeroTokenAddress());
         require(recipient != address(0), ZeroRecipientAddress());
+        require(token     != controller, TokenIsController());
 
         IERC721Like(token).safeTransferFrom{value: msg.value}(address(this), recipient, tokenId);
     }
@@ -234,7 +238,13 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function permissionlessWithdraw(address vault, address venue, address recipient, uint256 shares)
+    function permissionlessWithdraw(
+        address vault,
+        address venue,
+        address recipient,
+        uint256 shares,
+        uint256 minAssetsToRecipient
+    )
         external
         override
         nonReentrant
@@ -247,16 +257,21 @@ abstract contract PermissionlessWithdrawals is
         require(shares    != 0,          ZeroShares());
 
         _revertIfControllerProxyMismatch();
+        _revertIfNotRelayer();
 
-        VaultConfig storage vaultConfig = _vaultConfigs[vault];
-
-        require(vaultConfig.whitelisted, VaultNotWhitelisted());
+        require(_vaultConfigs[vault].maxExchangeRate != 0, VaultNotWhitelisted());
 
         // Step 2: Calculate additional amount needed for user withdrawal.
 
         address asset = IERC4626Like(vault).asset();
 
-        uint256 assetsRequested      = IERC4626Like(vault).convertToAssets(shares);
+        uint256 assetsRequested = IERC4626Like(vault).convertToAssets(shares);
+
+        require(
+            assetsRequested * 1e18 <= shares * _vaultConfigs[vault].maxExchangeRate,
+            ExchangeRateTooHigh()
+        );
+
         uint256 proxyStartingBalance = IERC20Like(asset).balanceOf(proxy);
         uint256 vaultStartingBalance = IERC20Like(asset).balanceOf(vault);
 
@@ -291,11 +306,13 @@ abstract contract PermissionlessWithdrawals is
 
         // Step 5: Redeem full shares amount into this contract.
 
+        // NOTE: Since the assumption is that the vault is a SparkVault implementation, the return
+        //       of the `redeem` function can be trusted and used as the final payout amount.
         uint256 fullAmount = IERC4626Like(vault).redeem(shares, address(this), msg.sender);
 
         // Step 6: Pay penalty amount and transfer remaining assets to the recipient.
 
-        uint256 penaltyAmount_ = vaultConfig.penaltyAmount;
+        uint256 penaltyAmount_ = _vaultConfigs[vault].penaltyAmount;
 
         require(
             fullAmount >= penaltyAmount_,
@@ -304,11 +321,17 @@ abstract contract PermissionlessWithdrawals is
 
         uint256 recipientAmount = fullAmount - penaltyAmount_;
 
+        require(
+            recipientAmount >= minAssetsToRecipient,
+            InsufficientAssetsForRecipient(recipientAmount, minAssetsToRecipient)
+        );
+
         IERC20(asset).safeTransfer(penaltyRecipient, penaltyAmount_);
         IERC20(asset).safeTransfer(recipient,        recipientAmount);
 
         emit PermissionlessWithdraw(
             vault,
+            venue,
             msg.sender,
             recipient,
             shares,
@@ -328,7 +351,17 @@ abstract contract PermissionlessWithdrawals is
         override
         returns (bool isWhitelisted)
     {
-        return _vaultConfigs[vault].whitelisted;
+        return _vaultConfigs[vault].maxExchangeRate != 0;
+    }
+
+    /// @inheritdoc IPermissionlessWithdrawals
+    function getVaultMaxExchangeRate(address vault)
+        external
+        view
+        override
+        returns (uint256 maxExchangeRate)
+    {
+        return _vaultConfigs[vault].maxExchangeRate;
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
@@ -342,7 +375,7 @@ abstract contract PermissionlessWithdrawals is
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function getVenueType(address vault, address venue)
+    function getVaultVenueType(address vault, address venue)
         external
         view
         override
@@ -352,18 +385,24 @@ abstract contract PermissionlessWithdrawals is
     }
 
     /// @inheritdoc IPermissionlessWithdrawals
-    function getMaxSharesInRatio(address venue)
+    function getVenueMaxSharesInRatio(address venue)
         external
         view
         override
         returns (uint256 maxSharesInRatio)
     {
-        return _maxSharesInRatios[venue];
+        return _venueMaxSharesInRatios[venue];
     }
 
     /**********************************************************************************************/
     /*** Internal Interactive Functions                                                         ***/
     /**********************************************************************************************/
+
+    function _setPenaltyRecipient(address recipient) internal {
+        require(recipient != address(0), ZeroPenaltyRecipientAddress());
+
+        emit PenaltyRecipientSet(penaltyRecipient = recipient);
+    }
 
     function _withdrawFromVenue(address vault, address venue, uint256 amount) internal {
         VenueType venueType = _vaultConfigs[vault].venueTypes[venue];
@@ -373,7 +412,7 @@ abstract contract PermissionlessWithdrawals is
         }
 
         if (venueType == VenueType.ERC4626) {
-            return _withdrawERC4626(venue, amount, (amount * _maxSharesInRatios[venue]) / 1e18);
+            return _withdrawERC4626(venue, amount, (amount * _venueMaxSharesInRatios[venue]) / 1e18);
         }
 
         if (venueType == VenueType.PSM) {
@@ -394,16 +433,50 @@ abstract contract PermissionlessWithdrawals is
         );
     }
 
+    function _revertIfNotRelayer() internal view {
+        require(_isRelayer(), NotRelayerOnController());
+    }
+
     /**********************************************************************************************/
     /*** Controller Interaction Hooks                                                           ***/
     /**********************************************************************************************/
 
+    /**
+     * @dev   Transfers assets from the ALMProxy to the specified destination address.
+     * @param asset       The address of the asset to transfer.
+     * @param destination The address receiving the assets (usually the vault).
+     * @param amount      The amount of assets to transfer.
+     */
     function _transferAsset(address asset, address destination, uint256 amount) internal virtual;
 
+    /**
+     * @dev   Withdraws assets from Aave to the ALMProxy via the controller.
+     * @param aToken The address of the Aave aToken to withdraw from.
+     * @param amount The amount of underlying assets to withdraw.
+     */
     function _withdrawAave(address aToken, uint256 amount) internal virtual;
 
+    /**
+     * @dev   Withdraws assets from a generic ERC4626 venue to the ALMProxy via the controller.
+     * @param token       The address of the ERC4626 venue.
+     * @param amount      The amount of underlying assets to withdraw.
+     * @param maxSharesIn The maximum number of shares that can be burned for the withdrawal.
+     */
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal virtual;
 
+    /**
+     * @dev   Withdraws assets from the PSM venue to the ALMProxy via the controller.
+     * @param amount The amount of underlying assets (i.e. USDC) to withdraw.
+     */
     function _withdrawPSM(uint256 amount) internal virtual;
+
+    /// @dev Returns the address of the PSM.
+    function _getPSM() internal view virtual returns (address);
+
+    /// @dev Returns the address of the PSM USDC token.
+    function _getPSMUSDC() internal view virtual returns (address);
+
+    /// @dev Returns true if this contract is a relayer/allocator.
+    function _isRelayer() internal view virtual returns (bool);
 
 }
