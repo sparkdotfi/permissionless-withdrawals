@@ -6,7 +6,7 @@ import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { Ethereum as SkyPAU } from "../../lib/sky-pau-registry/src/Ethereum.sol";
 
-import { PermissionlessWithdrawalsAgentDiamondPAU } from "../../src/PermissionlessWithdrawalsAgentDiamondPAU.sol";
+import { PermissionlessWithdrawalsDiamondPAU } from "../../src/PermissionlessWithdrawalsDiamondPAU.sol";
 
 import {
     IALMProxyLike,
@@ -164,7 +164,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         override
         returns (address)
     {
-        return address(new PermissionlessWithdrawalsAgentDiamondPAU(admin_, controller_, penaltyRecipient_, administeredAgent));
+        return address(new PermissionlessWithdrawalsDiamondPAU(admin_, controller_, penaltyRecipient_, administeredAgent));
     }
 
     function _proxy() internal pure override returns (address) {

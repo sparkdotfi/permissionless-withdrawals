@@ -9,6 +9,14 @@ interface IAccessControls {
 
 }
 
+interface IAdministeredAgent {
+
+    function call(address target, bytes memory data) external payable returns (bytes memory result);
+
+    function getIsActor(address account) external view returns (bool isActor);
+
+}
+
 // NOTE: While this interface depends on how the PAU Beacon and Controller is wired, it is the
 //       assumed wiring for this iteration.
 interface IDiamondControllerLike {
@@ -46,15 +54,22 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
     /**********************************************************************************************/
 
     address internal immutable _accessControls;
+    address internal immutable _administeredAgent;
 
     /**********************************************************************************************/
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
-    constructor(address admin_, address controller_, address penaltyRecipient_)
+    constructor(
+        address admin_,
+        address controller_,
+        address penaltyRecipient_,
+        address administeredAgent_
+    )
         PermissionlessWithdrawals(admin_, controller_, penaltyRecipient_)
     {
-        _accessControls = IDiamondControllerLike(controller).accessControls();
+        _accessControls    = IDiamondControllerLike(controller).accessControls();
+        _administeredAgent = administeredAgent_;
     }
 
     /**********************************************************************************************/
@@ -65,23 +80,42 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
         internal
         override
     {
-        IDiamondControllerLike(controller).transferAsset_transfer(asset, destination, amount);
+        IAdministeredAgent(_administeredAgent).call(
+            controller,
+            abi.encodeCall(
+                IDiamondControllerLike.transferAsset_transfer,
+                (asset, destination, amount)
+            )
+        );
     }
 
     function _withdrawAave(address aToken, uint256 amount) internal override {
-        IDiamondControllerLike(controller).aave_withdraw(aToken, amount);
+        IAdministeredAgent(_administeredAgent).call(
+            controller,
+            abi.encodeCall(IDiamondControllerLike.aave_withdraw, (aToken, amount))
+        );
     }
 
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
         internal
         override
     {
-        IDiamondControllerLike(controller).erc4626_withdraw(token, amount, maxSharesIn);
+        IAdministeredAgent(_administeredAgent).call(
+            controller,
+            abi.encodeCall(IDiamondControllerLike.erc4626_withdraw, (token, amount, maxSharesIn))
+        );
     }
 
     function _withdrawPSM(uint256 amount) internal override {
-        IDiamondControllerLike(controller).usds_mint(amount * _USDS_CONVERSION_PRECISION);
-        IDiamondControllerLike(controller).psm_swapUSDSToUSDC(amount);
+        IAdministeredAgent(_administeredAgent).call(
+            controller,
+            abi.encodeCall(IDiamondControllerLike.usds_mint, (amount * _USDS_CONVERSION_PRECISION))
+        );
+
+        IAdministeredAgent(_administeredAgent).call(
+            controller,
+            abi.encodeCall(IDiamondControllerLike.psm_swapUSDSToUSDC, (amount))
+        );
     }
 
     function _getPSM() internal view override returns (address) {
@@ -93,7 +127,9 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
     }
 
     function _isRelayer() internal view override returns (bool) {
-        return IAccessControls(_accessControls).hasRole(_ALLOCATOR_ROLE, address(this));
+        return
+            IAccessControls(_accessControls).hasRole(_ALLOCATOR_ROLE, _administeredAgent) &&
+            IAdministeredAgent(_administeredAgent).getIsActor(address(this));
     }
 
 }
