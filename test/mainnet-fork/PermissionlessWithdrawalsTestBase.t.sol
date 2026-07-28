@@ -617,6 +617,12 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
         withdrawals.recoverETH(address(0));
     }
 
+    function test_recoverETH_recipientIsController() external {
+        vm.expectRevert(IPermissionlessWithdrawals.RecipientIsController.selector);
+        vm.prank(admin);
+        withdrawals.recoverETH(controller);
+    }
+
     function test_recoverETH_transferETHFailed() external {
         uint256 amount = 1 ether;
 
@@ -843,7 +849,9 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
     function test_permissionlessWithdraw_exchangeRateTooHighBoundary() external {
         uint256 shares       = 100e18;
-        uint256 exchangeRate = 1.009812906624833965e18;
+        uint256 exchangeRate = IERC4626Like(SP_ETH_VAULT).convertToAssets(1e18) + 1;
+
+        assertEq(exchangeRate, 1.009812906624833965e18);
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
@@ -1010,7 +1018,9 @@ abstract contract PermissionlessWithdrawalsTestBase is Test {
 
         _mintSharesAndApprove(SP_ETH_VAULT, WETH, shares);
 
-        uint256 expectedRecipientAmount = 10_088.129066248339647414e18;
+        uint256 expectedRecipientAmount = IERC4626Like(SP_ETH_VAULT).convertToAssets(shares) - SPETH_PENALTY_AMOUNT;
+
+        assertEq(expectedRecipientAmount, 10_088.129066248339647414e18);
 
         vm.expectRevert(abi.encodeWithSelector(
             IPermissionlessWithdrawals.InsufficientAssetsForRecipient.selector,

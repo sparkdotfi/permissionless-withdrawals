@@ -52,7 +52,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /**
      * @notice Thrown when the assets to be sent to the recipient are insufficient.
-     * @param  amount   The amount of assets to be sent to the recipient. net of the penalty.
+     * @param  amount   The amount of assets to be sent to the recipient, net of the penalty.
      * @param  required The min assets required, as specified by the user.
      */
     error InsufficientAssetsForRecipient(uint256 amount, uint256 required);
@@ -76,6 +76,9 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /// @notice Thrown when the controller address is passed in as a token in recovery functions.
     error TokenIsController();
+
+    /// @notice Thrown when the recipient address is the controller in an ETH recovery function.
+    error RecipientIsController();
 
     /// @notice Thrown when the ETH transfer to the recipient fails.
     error TransferETHFailed();
@@ -164,6 +167,9 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      * @notice Emitted when the admin sets the ratio for the maximum number of shares that can be
      *         withdrawn from an ERC4626 venue given an amount of assets.
+     * @dev    A `maxSharesInRatio` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
+     *         same decimal places, however if, for example, the asset has 6 decimals and the shares
+     *         have 18 decimals, then 1e30 is 100% (`1e18 * (1e18 / 1e6)`).
      * @param  venue            Address of the venue that was configured.
      * @param  maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
      *                          withdraw from an ERC4626 venue.
@@ -207,6 +213,9 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      * @notice Updates the maximum units of shares to redeem for 1e18 units of assets to withdraw
      *         from an ERC4626 venue. Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     * @dev    A `maxSharesInRatio` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
+     *         same decimal places, however if, for example, the asset has 6 decimals and the shares
+     *         have 18 decimals, then 1e30 is 100% (`1e18 * (1e18 / 1e6)`).
      * @param  venue            Address of the venue to configure.
      * @param  maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
      *                          withdraw from an ERC4626 venue.
@@ -324,6 +333,9 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      * @notice Returns the maximum units of shares to redeem for 1e18 units of assets to withdraw
      *         from an ERC4626 venue.
+     * @dev    A `maxSharesInRatio` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
+     *         same decimal places, however if, for example, the asset has 6 decimals and the shares
+     *         have 18 decimals, then 1e30 is 100% (`1e18 * (1e18 / 1e6)`).
      * @param  venue            Address of the venue to query.
      * @return maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
      *                          withdraw from an ERC4626 venue.

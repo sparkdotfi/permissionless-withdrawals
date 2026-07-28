@@ -197,6 +197,7 @@ abstract contract PermissionlessWithdrawals is
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(recipient != address(0), ZeroRecipientAddress());
+        require(recipient != controller, RecipientIsController());
 
         ( bool success, ) = recipient.call{value : address(this).balance}("");
 

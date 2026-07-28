@@ -71,8 +71,8 @@ Disabling a vault by setting its `maxExchangeRate` to `0` does not clear or dele
 Controller withdrawal and transfer hooks are only invoked when the vault lacks sufficient liquidity. Consequently, disabling or unconfiguring venue operations does not fully pause permissionless withdrawals: withdrawals can continue as long as the vault holds enough assets to satisfy them directly. To completely stop all permissionless withdrawals, one of the following actions must be taken:
 
 - The admin must disable the vault by setting its `maxExchangeRate` to `0` via `setVaultConfig`.
-- PAU/ALM governance must revoke the controller's role on the `ALMProxy`.
 - PAU/ALM governance must revoke the `PermissionlessWithdrawals` contract's authorized role (legacy `RELAYER`, diamond `ALLOCATOR_ROLE`) on the controller.
+- PAU/ALM governance must revoke the controller's role on the `ALMProxy` (this will also disable the other allocators from working).
 
 ### Fixed penalty
 
