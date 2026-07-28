@@ -2,7 +2,7 @@
 
 ## Objective
 
-The ALM Planner is the normal path for moving liquidity in and out of Spark savings vaults. If it is unavailable, users could be unable to withdraw even when the underlying liquidity exists in SparkLend or other venues. This contract is a backup, a permissionless, single transaction path that sources a vault's missing liquidity straight from a set of admin-configured venues (supporting SparkLend/Aave-style aTokens, generic ERC4626 vaults, and the PSM via hardcoded venue type dispatch logic) and hands it to the user, with no operator in the loop.
+The ALM Planner is the normal path for moving liquidity in and out of Spark savings vaults. If it is unavailable, users could be unable to withdraw even when the underlying liquidity exists in SparkLend or other venues. This contract is a backup, a permissionless, single transaction path that sources a vault's missing liquidity straight from a set of admin-configured venues and hands it to the user, with no operator in the loop.
 
 Anyone holding shares above the 24/7 liquidity level can call it. Supported venues are SparkLend (Aave style aTokens), generic ERC4626 vaults, and the PSM, covering USDC, USDT, and WETH.
 

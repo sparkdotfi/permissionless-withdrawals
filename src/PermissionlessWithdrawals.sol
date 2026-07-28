@@ -426,47 +426,41 @@ abstract contract PermissionlessWithdrawals is
     /**********************************************************************************************/
 
     /**
-     * @notice Transfers assets from the ALMProxy to the specified destination address.
-     * @param  asset       The address of the asset to transfer.
-     * @param  destination The address receiving the assets (usually the vault).
-     * @param  amount      The amount of assets to transfer.
+     * @dev   Transfers assets from the ALMProxy to the specified destination address.
+     * @param asset       The address of the asset to transfer.
+     * @param destination The address receiving the assets (usually the vault).
+     * @param amount      The amount of assets to transfer.
      */
     function _transferAsset(address asset, address destination, uint256 amount) internal virtual;
 
     /**
-     * @notice Withdraws assets from Aave to the ALMProxy via the controller.
-     * @param  aToken The address of the Aave aToken to withdraw from.
-     * @param  amount The amount of underlying assets to withdraw.
+     * @dev   Withdraws assets from Aave to the ALMProxy via the controller.
+     * @param aToken The address of the Aave aToken to withdraw from.
+     * @param amount The amount of underlying assets to withdraw.
      */
     function _withdrawAave(address aToken, uint256 amount) internal virtual;
 
     /**
-     * @notice Withdraws assets from a generic ERC4626 venue to the ALMProxy via the controller.
-     * @param  token       The address of the ERC4626 venue.
-     * @param  amount      The amount of underlying assets to withdraw.
-     * @param  maxSharesIn The maximum number of shares that can be burned for the withdrawal.
+     * @dev   Withdraws assets from a generic ERC4626 venue to the ALMProxy via the controller.
+     * @param token       The address of the ERC4626 venue.
+     * @param amount      The amount of underlying assets to withdraw.
+     * @param maxSharesIn The maximum number of shares that can be burned for the withdrawal.
      */
     function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal virtual;
 
     /**
-     * @notice Withdraws assets from the PSM venue to the ALMProxy via the controller.
-     * @param  amount The amount of underlying assets (i.e. USDC) to withdraw.
+     * @dev   Withdraws assets from the PSM venue to the ALMProxy via the controller.
+     * @param amount The amount of underlying assets (i.e. USDC) to withdraw.
      */
     function _withdrawPSM(uint256 amount) internal virtual;
 
-    /**
-     * @notice Returns the address of the PSM.
-     */
+    /// @dev Returns the address of the PSM.
     function _getPSM() internal view virtual returns (address);
 
-    /**
-     * @notice Returns the address of the PSM USDC token.
-     */
+    /// @dev Returns the address of the PSM USDC token.
     function _getPSMUSDC() internal view virtual returns (address);
 
-    /**
-     * @notice Returns true if this contract is a relayer/allocator.
-     */
+    /// @dev Returns true if this contract is a relayer/allocator.
     function _isRelayer() internal view virtual returns (bool);
 
 }
