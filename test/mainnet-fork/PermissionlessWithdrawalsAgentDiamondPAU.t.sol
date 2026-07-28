@@ -6,12 +6,26 @@ import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { Ethereum as SkyPAU } from "../../lib/sky-pau-registry/src/Ethereum.sol";
 
-import { PermissionlessWithdrawalsDiamondPAU } from "../../src/PermissionlessWithdrawalsDiamondPAU.sol";
+import { PermissionlessWithdrawalsAgentDiamondPAU } from "../../src/PermissionlessWithdrawalsAgentDiamondPAU.sol";
 
 import {
     IALMProxyLike,
     PermissionlessWithdrawalsTestBase
 } from "./PermissionlessWithdrawalsTestBase.t.sol";
+
+interface IAdministeredAgentFactoryLike {
+
+    function deploy(address admin) external returns (address);
+
+}
+
+interface IAdministeredAgentLike {
+
+    function addActor(address account) external;
+
+    function removeActor(address account) external;
+
+}
 
 interface IPAUFactoryLike {
 
@@ -95,9 +109,9 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     bytes32 internal constant ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
 
     address internal accessControls;
+    address internal administeredAgent;
 
-    function setUp() public override {
-        // Deploy a fresh AccessControls and Controller pointed at the live ALMProxy and RateLimits.
+    function setUp() public override {// Deploy a fresh AccessControls and Controller pointed at the live ALMProxy and RateLimits.
         accessControls = IPAUFactoryLike(SkyPAU.PAU_FACTORY).deployAccessControls(Ethereum.SPARK_PROXY);
 
         controller = IPAUFactoryLike(SkyPAU.PAU_FACTORY).deployController(
@@ -114,6 +128,8 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         ids[2] = "PSM_FACET";
         ids[3] = "USDS_FACET";
         ids[4] = "TRANSFER_ASSET_FACET";
+
+        administeredAgent = IAdministeredAgentFactoryLike(SkyPAU.ADMINISTERED_AGENT_FACTORY).deploy(Ethereum.SPARK_PROXY);
 
         vm.startPrank(Ethereum.SPARK_PROXY);
 
@@ -132,6 +148,8 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
 
         _configureRateLimits(IDiamondControllerLike(controller), IRateLimitsLike(Ethereum.ALM_RATE_LIMITS));
 
+        IAccessControlsLike(accessControls).grantRole(ALLOCATOR_ROLE, administeredAgent);
+
         vm.stopPrank();
 
         super.setUp();
@@ -146,7 +164,7 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
         override
         returns (address)
     {
-        return address(new PermissionlessWithdrawalsDiamondPAU(admin_, controller_, penaltyRecipient_));
+        return address(new PermissionlessWithdrawalsAgentDiamondPAU(admin_, controller_, penaltyRecipient_, administeredAgent));
     }
 
     function _proxy() internal pure override returns (address) {
@@ -158,12 +176,12 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     //       hooks grant, revoke, and return ALLOCATOR_ROLE.
     function _grantRelayerRole(address account) internal override {
         vm.prank(Ethereum.SPARK_PROXY);
-        IAccessControlsLike(accessControls).grantRole(ALLOCATOR_ROLE, account);
+        IAdministeredAgentLike(administeredAgent).addActor(account);
     }
 
     function _revokeRelayerRole(address account) internal override {
         vm.prank(Ethereum.SPARK_PROXY);
-        IAccessControlsLike(accessControls).revokeRole(ALLOCATOR_ROLE, account);
+        IAdministeredAgentLike(administeredAgent).removeActor(account);
     }
 
     // Sets every rate-limit key the stories consume. Everything is unlimited except the PSM.
