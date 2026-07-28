@@ -175,16 +175,15 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
 
     /**
-     * @notice Sets the penalty recipient.
-     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     * @notice Sets the penalty recipient. Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      * @dev    Reverts if penaltyRecipient is zero.
      * @param  recipient The address of the penalty recipient.
      */
     function setPenaltyRecipient(address recipient) external;
 
     /**
-     * @notice Updates the configuration for a given vault.
-     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     * @notice Updates the configuration for a given vault. Can only be called by accounts with
+     *         DEFAULT_ADMIN_ROLE.
      * @dev    Reverts if penaltyAmount is zero.
      * @param  vault           Address of the vault to configure.
      * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
@@ -195,10 +194,10 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     function setVaultConfig(address vault, uint256 maxExchangeRate, uint256 penaltyAmount) external;
 
     /**
-     * @notice Sets the type of a given venue.
-     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
-     * @dev    Setting venueType to `UNSET` unsets the (vault, venue) pairing.
-     *         Reverts if the venue type is incorrect.
+     * @notice Sets the type of a given venue. Can only be called by accounts with
+     *         DEFAULT_ADMIN_ROLE.
+     * @dev    Setting venueType to `UNSET` unsets the (vault, venue) pairing. Reverts if the venue
+     *         type is incorrect.
      * @param  vault     Address of the vault being configured.
      * @param  venue     Address of the venue to set the type of.
      * @param  venueType The type of venue to set.
@@ -207,8 +206,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
 
     /**
      * @notice Updates the maximum units of shares to redeem for 1e18 units of assets to withdraw
-     *         from an ERC4626 venue.
-     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     *         from an ERC4626 venue. Can only be called by accounts with DEFAULT_ADMIN_ROLE.
      * @param  venue            Address of the venue to configure.
      * @param  maxSharesInRatio The maximum units of shares to redeem for 1e18 units of assets to
      *                          withdraw from an ERC4626 venue.
@@ -220,8 +218,8 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
 
     /**
-     * @notice Recovers ERC20 tokens stuck in this contract.
-     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     * @notice Recovers ERC20 tokens stuck in this contract. Can only be called by accounts with
+     *         DEFAULT_ADMIN_ROLE.
      * @dev    Reverts if token or recipient is zero, or if the token is the controller address.
      *         Transfers all of the token in this contract to the recipient.
      * @param  token     Address of the token to recover.
@@ -241,8 +239,8 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     function recoverERC721(address token, address recipient, uint256 tokenId) external payable;
 
     /**
-     * @notice Recovers ETH stuck in this contract.
-     *         Can only be called by accounts with DEFAULT_ADMIN_ROLE.
+     * @notice Recovers ETH stuck in this contract. Can only be called by accounts with
+     *         DEFAULT_ADMIN_ROLE.
      * @dev    Reverts if recipient is zero. Transfers all ETH in this contract to the recipient.
      * @param  recipient Address that receives the ETH.
      */
@@ -253,8 +251,8 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**********************************************************************************************/
 
     /**
-     * @notice Redeems the caller's vault shares, sourcing any shortfall from a venue.
-     *         Anyone holding shares can call this and always pays the vault's fixed penalty.
+     * @notice Redeems the caller's vault shares, sourcing any shortfall from a venue. Anyone
+     *         holding shares can call this and always pays the vault's fixed penalty.
      * @dev    Runs under nonReentrant. The caller must approve `shares` to this contract first. The
      *         shortfall is pulled from the venue through the controller using this contract's
      *         relayer role. Reverts if the redeemed assets cannot cover the penalty.
@@ -277,19 +275,13 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /*** Variables                                                                              ***/
     /**********************************************************************************************/
 
-    /**
-     * @notice Returns the configured Controller address.
-     */
+    /// @notice Returns the configured Controller address.
     function controller() external view returns (address);
 
-    /**
-     * @notice Returns the address that receives withdrawal penalties.
-     */
+    /// @notice Returns the address that receives withdrawal penalties.
     function penaltyRecipient() external view returns (address);
 
-    /**
-     * @notice Returns the address of the ALM proxy contract.
-     */
+    /// @notice Returns the address of the ALM proxy contract.
     function proxy() external view returns (address);
 
     /**********************************************************************************************/
