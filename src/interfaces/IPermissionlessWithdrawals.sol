@@ -190,7 +190,6 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      * @notice Updates the configuration for a given vault. Can only be called by accounts with
      *         DEFAULT_ADMIN_ROLE.
-     * @dev    Reverts if penaltyAmount is zero.
      * @param  vault           Address of the vault to configure.
      * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
      *                         withdrawal. If set to 0, the vault is effectively disabled for
@@ -250,7 +249,8 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
     /**
      * @notice Recovers ETH stuck in this contract. Can only be called by accounts with
      *         DEFAULT_ADMIN_ROLE.
-     * @dev    Reverts if recipient is zero. Transfers all ETH in this contract to the recipient.
+     * @dev    Reverts if recipient is zero, or if the recipient is the controller address.
+     *         Transfers all ETH in this contract to the recipient.
      * @param  recipient Address that receives the ETH.
      */
     function recoverETH(address recipient) external;
@@ -265,18 +265,18 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @dev    Runs under nonReentrant. The caller must approve `shares` to this contract first. The
      *         shortfall is pulled from the venue through the controller using this contract's
      *         relayer role. Reverts if the redeemed assets cannot cover the penalty.
-     * @param  vault                 Address of the vault to withdraw from.
-     * @param  venue                 Address of the venue to source the shortfall from if necessary.
-     * @param  recipient             Address that receives the assets net of the penalty.
-     * @param  shares                The number of vault shares to redeem.
-     * @param  minAssetsForRecipient Minimum assets for the recipient, net of penalty.
+     * @param  vault                Address of the vault to withdraw from.
+     * @param  venue                Address of the venue to source the shortfall from if necessary.
+     * @param  recipient            Address that receives the assets net of the penalty.
+     * @param  shares               The number of vault shares to redeem.
+     * @param  minAssetsToRecipient Minimum assets for the recipient, net of penalty.
      */
     function permissionlessWithdraw(
         address vault,
         address venue,
         address recipient,
         uint256 shares,
-        uint256 minAssetsForRecipient
+        uint256 minAssetsToRecipient
     )
         external;
 

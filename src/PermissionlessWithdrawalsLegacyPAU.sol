@@ -55,11 +55,11 @@ contract PermissionlessWithdrawalsLegacyPAU is PermissionlessWithdrawals {
         ILegacyControllerLike(controller).withdrawAave(aToken, amount);
     }
 
-    function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
+    function _withdrawERC4626(address vault, uint256 amount, uint256 maxSharesIn)
         internal
         override
     {
-        ILegacyControllerLike(controller).withdrawERC4626(token, amount, maxSharesIn);
+        ILegacyControllerLike(controller).withdrawERC4626(vault, amount, maxSharesIn);
     }
 
     function _withdrawPSM(uint256 amount) internal override {
