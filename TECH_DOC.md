@@ -8,7 +8,7 @@ Anyone holding shares above the 24/7 liquidity level can call it. Supported venu
 
 ## Withdrawal Flow
 
-`permissionlessWithdraw(vault, venue, recipient, shares)` runs entirely inside a `nonReentrant` guard:
+`permissionlessWithdraw(vault, venue, recipient, shares, minAssetsToRecipient)` runs entirely inside a `nonReentrant` guard:
 
 1. Validate that `vault` and `recipient` are non-zero, `shares` is non-zero, the controller/proxy consistency check passes, the contract is an authorized allocator/relayer of the controller, and that the vault is enabled (i.e. has a non-zero `maxExchangeRate`).
 2. Compute the shortfall. `assetsRequested = vault.convertToAssets(shares)`. Verify that the exchange rate (`assetsRequested * 1e18 / shares`) does not exceed the vault's configured `maxExchangeRate` (reverting with `ExchangeRateTooHigh` otherwise). Work out how much the vault is short, and from that how much the ALMProxy is short.
@@ -42,7 +42,7 @@ When withdrawing from an ERC4626 venue, the contract caps the shares burned at `
 
 ### PSM conversion assumes a USDC gem
 
-The PSM path mints USDS and swaps it to the gem using a hardcoded `_USDS_CONVERSION_PRECISION = 1e12` defined in each concrete implementation, which assumes a 6 decimal gem against 18 decimal USDS. This is safe only because the PSM gem is permanently USDC. The controller reads this factor from the PSM at call time, but this contract relies on the invariant rather than reading it.
+The PSM path mints USDS and swaps it to the gem using a hardcoded `_USDS_CONVERSION_PRECISION = 1e12` defined in the abstract implementation, which assumes a 6 decimal gem against 18 decimal USDS. This is safe only because the PSM gem is permanently USDC. The controller reads this factor from the PSM at call time, but this contract relies on the invariant rather than reading it.
 
 Additionally, when calling `setVaultVenueType` for a PSM venue, the `venue` address must exactly match the PSM contract address that the controller is aware of, and the vault's underlying asset must exactly match the USDC contract address that the controller is aware of. This is because the controller's PSM route is hardcoded and does not accept a venue address dynamically. Therefore, even though there is no flexibility in the PSM contract address used by the controller, the correct address must still be provided by the admin during `setVaultVenueType` configuration and by the caller during `permissionlessWithdraw` in order to pass the whitelisting and asset-matching checks.
 
@@ -82,7 +82,7 @@ A penalty fee is charged on every successful `permissionlessWithdraw` call. This
 
 ## Known Limitations
 
-- Shared rate-limit budget. The backup path draws down the SLL's shared rate limits: the per venue withdraw keys consumed by the step 3 venue withdrawal, plus the per `(asset, vault)` `LIMIT_ASSET_TRANSFER` key consumed by the step 4 top up from the proxy to the vault. The PSM venue is special: a single PSM withdrawal mints then swaps, so it spends two global budgets in one call, the global `LIMIT_USDS_MINT` from the mint and the global `LIMIT_USDS_TO_USDC` from the swap. Any of these can be exhausted SLL activity or griefed through repeated calls, in particular repeated PSM withdrawals can stall unrelated SLL operations that share `LIMIT_USDS_MINT` or `LIMIT_USDS_TO_USDC`. The fixed penalty per call and the limits regenerating over time are the mitigations.
+- Shared rate-limit budget. The backup path draws down the SLL's shared rate limits: the per venue withdraw keys consumed by the step 3 venue withdrawal, plus the per `(asset, vault)` `LIMIT_ASSET_TRANSFER` key consumed by the step 4 top up from the proxy to the vault. The PSM venue is special: a single PSM withdrawal mints then swaps, so it spends two global budgets in one call, the global `LIMIT_USDS_MINT` from the mint and the global `LIMIT_USDS_TO_USDC` from the swap. Any of these can be exhausted by SLL activity or griefed through repeated calls, in particular repeated PSM withdrawals can stall unrelated SLL operations that share `LIMIT_USDS_MINT` or `LIMIT_USDS_TO_USDC`. The fixed penalty per call and the limits regenerating over time are the mitigations.
 
 - Per vault transfer limit must be provisioned. The step 4 top up calls `_transferAsset(asset, vault, amount)`, which the controller meters under `makeAddressAddressKey(LIMIT_ASSET_TRANSFER, asset, vault)`. Whitelisting a vault does not by itself make the backup path usable: if that key is left at its default of zero, every call that needs a top up reverts and the path is dead for that vault. The governance spell that whitelists a vault must also raise this rate limit, alongside the relevant venue withdraw keys, high enough to cover the expected backup withdrawals.
 
@@ -92,5 +92,5 @@ A penalty fee is charged on every successful `permissionlessWithdraw` call. This
 
 - `DEFAULT_ADMIN_ROLE` (Spark governance, `SPARK_PROXY`): fully trusted. Sets vault configurations (max exchange rates and penalties), sets venue types for vaults, sets the penalty recipient, and sets per venue max shares in ratios.
 - Supported assets must be standard, non-rebasing, non-fee-on-transfer ERC-20s. USDT is in scope and has a dormant fee switch that, if enabled, would cause withdrawals to revert (due to the transfer fee reducing the transferred/redeemed balances below expected values), making the `spUSDT` path unavailable until the fee is disabled.
-- Controller, ALMProxy, and RateLimits: trusted to custody funds and enforce rate limits and slippage. This contract must hold the controller's relayer role (legacy `RELAYER`, diamond `ALLOCATOR_ROLE`), granted by a governance spell, in order to drive the ALMProxy.
+- Controller, ALMProxy, and RateLimits: trusted to custody funds and enforce rate limits and slippage. This contract must be an allocator for a controller (must hold the `RELAYER` role for a legacy ALM controller, or must be an actor of an administered agent that holds the `ALLOCATOR_ROLE` role for a diamond PAU controller), granted by a governance spell, in order to drive the ALMProxy.
 - Callers: untrusted and permissionless. A caller can only redeem their own shares (which they must have approved to this contract) and always pays the penalty.

@@ -457,12 +457,12 @@ abstract contract PermissionlessWithdrawals is
     function _withdrawAave(address aToken, uint256 amount) internal virtual;
 
     /**
-     * @dev   Withdraws assets from a generic ERC4626 venue to the ALMProxy via the controller.
-     * @param token       The address of the ERC4626 venue.
+     * @dev   Withdraws assets from a generic ERC4626 vault to the ALMProxy via the controller.
+     * @param vault       The address of the ERC4626 vault.
      * @param amount      The amount of underlying assets to withdraw.
      * @param maxSharesIn The maximum number of shares that can be burned for the withdrawal.
      */
-    function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn) internal virtual;
+    function _withdrawERC4626(address vault, uint256 amount, uint256 maxSharesIn) internal virtual;
 
     /**
      * @dev   Withdraws assets from the PSM venue to the ALMProxy via the controller.

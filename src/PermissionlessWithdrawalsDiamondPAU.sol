@@ -44,6 +44,12 @@ interface IDiamondControllerLike {
 contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
 
     /**********************************************************************************************/
+    /*** Errors                                                                                 ***/
+    /**********************************************************************************************/
+
+    error ZeroAdministeredAgentAddress();
+
+    /**********************************************************************************************/
     /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
@@ -68,6 +74,8 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
     )
         PermissionlessWithdrawals(admin_, controller_, penaltyRecipient_)
     {
+        require(administeredAgent_ != address(0), ZeroAdministeredAgentAddress());
+
         _accessControls    = IDiamondControllerLike(controller).accessControls();
         _administeredAgent = administeredAgent_;
     }
@@ -96,13 +104,13 @@ contract PermissionlessWithdrawalsDiamondPAU is PermissionlessWithdrawals {
         );
     }
 
-    function _withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
+    function _withdrawERC4626(address vault, uint256 amount, uint256 maxSharesIn)
         internal
         override
     {
         IAdministeredAgent(_administeredAgent).call(
             controller,
-            abi.encodeCall(IDiamondControllerLike.erc4626_withdraw, (token, amount, maxSharesIn))
+            abi.encodeCall(IDiamondControllerLike.erc4626_withdraw, (vault, amount, maxSharesIn))
         );
     }
 

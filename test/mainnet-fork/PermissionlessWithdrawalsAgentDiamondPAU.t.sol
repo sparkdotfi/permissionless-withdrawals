@@ -156,6 +156,15 @@ contract PermissionlessWithdrawalsDiamondPAUForkTest is PermissionlessWithdrawal
     }
 
     /**********************************************************************************************/
+    /*** constructor tests                                                                      ***/
+    /**********************************************************************************************/
+
+    function test_constructor_zeroAdministeredAgentAddress() external {
+        vm.expectRevert(PermissionlessWithdrawalsDiamondPAU.ZeroAdministeredAgentAddress.selector);
+        new PermissionlessWithdrawalsDiamondPAU(admin, controller, penaltyRecipient, address(0));
+    }
+
+    /**********************************************************************************************/
     /*** Deploy and role hooks                                                                  ***/
     /**********************************************************************************************/
 
