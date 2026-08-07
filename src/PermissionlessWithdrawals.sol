@@ -140,9 +140,9 @@ abstract contract PermissionlessWithdrawals is
         require(vault != address(0), ZeroVaultAddress());
         require(venue != address(0), ZeroVenueAddress());
 
-        // NOTE: The asset of the venue is not checked against the asset of the vault after being
-        //       set here, since transfers will fail anyway in `permissionlessWithdraw` if the
-        //       assets are not equal.
+        // NOTE: The asset of the venue is not checked against the asset of the vault during
+        //       `permissionlessWithdraw`, since it is checked at configuration time here, and
+        //       transfers would fail anyway if the assets did not match.
 
         require(
             venueType == VenueType.UNSET ||
