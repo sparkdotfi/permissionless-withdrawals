@@ -28,7 +28,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @notice Configuration for a specific vault.
      * @dev    A `maxExchangeRate` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
      *         same decimal places, however if, for example, the asset has 6 decimals and the shares
-     *         have 18 decimals, then 1e12 is 100% (`1e18 * (1e6 / 1e18)`).
+     *         have 18 decimals, then 1e6 is 100% (`1e18 * (1e6 / 1e18)`).
      * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
      *                         withdrawal.
      * @param  penaltyAmount   The number of assets to be sent to the penalty recipient.
@@ -150,7 +150,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @notice Emitted when the admin sets a vault's configuration.
      * @dev    A `maxExchangeRate` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
      *         same decimal places, however if, for example, the asset has 6 decimals and the shares
-     *         have 18 decimals, then 1e12 is 100% (`1e18 * (1e6 / 1e18)`).
+     *         have 18 decimals, then 1e6 is 100% (`1e18 * (1e6 / 1e18)`).
      * @param  vault           Address of the vault being configured.
      * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
      *                         withdrawal.
@@ -198,7 +198,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      *         DEFAULT_ADMIN_ROLE.
      * @dev    A `maxExchangeRate` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
      *         same decimal places, however if, for example, the asset has 6 decimals and the shares
-     *         have 18 decimals, then 1e12 is 100% (`1e18 * (1e6 / 1e18)`).
+     *         have 18 decimals, then 1e6 is 100% (`1e18 * (1e6 / 1e18)`).
      * @param  vault           Address of the vault to configure.
      * @param  maxExchangeRate The maximum units of asset per 1e18 share units requested for
      *                         withdrawal. If set to 0, the vault is effectively disabled for
@@ -318,7 +318,7 @@ interface IPermissionlessWithdrawals is IAccessControlEnumerable {
      * @notice Returns the maximum exchange rate for a given vault.
      * @dev    A `maxExchangeRate` of 1e18 is 100% (i.e. 1:1) if both the asset and shares have the
      *         same decimal places, however if, for example, the asset has 6 decimals and the shares
-     *         have 18 decimals, then 1e12 is 100% (`1e18 * (1e6 / 1e18)`).
+     *         have 18 decimals, then 1e6 is 100% (`1e18 * (1e6 / 1e18)`).
      * @param  vault           Address of the vault to query.
      * @return maxExchangeRate The maximum units of asset per 1e18 share units requested for
      *                         withdrawal.
