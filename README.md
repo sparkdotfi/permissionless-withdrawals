@@ -7,7 +7,7 @@
 
 Permissionless Withdrawals is a backup withdrawal path for Spark savings vaults. It lets anyone redeem their own vault shares in a single transaction, even when the vault holds no idle liquidity, by sourcing the shortfall directly from a whitelisted venue (SparkLend, an ERC4626 vault, or the PSM) through the Spark ALM Controller and ALMProxy.
 
-The goal is resilience: withdrawals do not depend on the ALM Planner being online. Any user above the 24/7 liquidity level can trigger a withdrawal for the major supported assets (USDC, USDT, and WETH) without an operator in the loop. A fixed penalty per withdrawal keeps this path a backup rather than the default route.
+The goal is resilience: withdrawals do not depend on the ALM Planner being online. Any user above the 24/7 liquidity level can trigger a withdrawal for the major supported assets (USDC, USDT, and WETH) without an operator in the loop. Note that the underlying asset for the spETH savings vault is WETH; since the contract performs no unwrap step, the recipient receives WETH rather than native ETH. A fixed penalty per withdrawal keeps this path a backup rather than the default route.
 
 ## Core Contracts
 
