@@ -56,6 +56,17 @@ forge test
 
 AGPL-3.0-or-later. See [LICENSE](./LICENSE).
 
+## Audits
+
+Audit reports are hosted on the auditors' public portfolio pages:
+
+| Auditor | Report | Version | Date |
+| --- | --- | --- | --- |
+| ChainSecurity | [Permissionless SLL Withdrawals](https://www.chainsecurity.com/security-audit/spark-permissionless-sll-withdrawals/) | v1.0.0 | 2026-08-17 |
+| Cantina | [Sky: Permissionless SLL Withdrawals](https://cantina.xyz/portfolio/35d7e30a-09ad-468c-83e9-6dc1febdf2ff) | v1.0.0 | 2026-07-28 |
+
+ChainSecurity reports are cumulative: each portfolio page hosts the latest version of the report, which covers all previously reviewed versions.
+
 ---
 
 <p align="center">
